@@ -920,7 +920,7 @@ export class GameRoom {
       angularDamping: 0.95,
       fixedRotation: true,
     });
-    body.velocity.set((Math.random() - 0.5) * 2, -3 - Math.random() * 2, (Math.random() - 0.5) * 2);
+    body.velocity.set(0, -4 - Math.random() * 2, 0);
     body.userData = {
       id: this.debrisNextId++,
       kind: "goat",
@@ -929,7 +929,6 @@ export class GameRoom {
       sy: hy * 2,
       sz: hz * 2,
       yaw: Math.random() * Math.PI * 2,
-      chargeT: 0.6 + Math.random() * 1.2,
       hp: 60,
     };
     // Cannon may not retain arbitrary fields on some paths — mirror on body
@@ -1009,13 +1008,12 @@ export class GameRoom {
     }
   }
 
-  /** Steer goats: fast charge toward nearest player / wander. */
+  /** Steer goats: idle until a player is within 20 m, then sprint-charge. */
   steerGoats(dt) {
     if (!this.goats.length) return;
-    const chaseRange = this.platformRadius > 40 ? 220 : 48;
+    const chaseRange = 20;
     for (const g of this.goats) {
       const ud = g.userData;
-      ud.chargeT = (ud.chargeT || 0) - dt;
       let tx = null;
       let tz = null;
       let best = Infinity;
@@ -1030,27 +1028,30 @@ export class GameRoom {
           tz = dz;
         }
       }
-      let wishX = 0;
-      let wishZ = 0;
-      if (tx != null && best < chaseRange) {
-        const inv = best > 0.15 ? 1 / best : 0;
-        wishX = tx * inv;
-        wishZ = tz * inv;
-      } else if (ud.chargeT <= 0) {
-        const ang = Math.random() * Math.PI * 2;
-        wishX = Math.cos(ang);
-        wishZ = Math.sin(ang);
-        ud.chargeT = 0.8 + Math.random() * 1.4;
-      } else {
-        wishX = -Math.sin(ud.yaw || 0);
-        wishZ = -Math.cos(ud.yaw || 0);
+      const chasing = tx != null && best < chaseRange;
+      // Still falling from the sky — don't wander, just settle
+      const airborne = g.position.y > PLATFORM_TOP + 1.6 || g.velocity.y < -2.5;
+      if (!chasing || airborne) {
+        g.velocity.x *= airborne ? 0.92 : 0.15;
+        g.velocity.z *= airborne ? 0.92 : 0.15;
+        if (!airborne) {
+          g.velocity.x = 0;
+          g.velocity.z = 0;
+        }
+        if (g.velocity.y < 0) g.velocity.y *= 0.92;
+        if (g.position.y < 2.2 && g.velocity.y > 0 && g.velocity.y < 6) {
+          g.velocity.y *= 0.15;
+        }
+        g.quaternion.setFromEuler(0, ud.yaw || 0, 0);
+        continue;
       }
-      const sprint = tx != null && best < chaseRange;
-      // Slightly above player sprint (15.2) so the goat can close the gap
-      const walkSpeed = sprint ? 16.5 : 13.5;
+
+      const inv = best > 0.15 ? 1 / best : 0;
+      const wishX = tx * inv;
+      const wishZ = tz * inv;
+      const walkSpeed = 16.5;
       g.velocity.x = wishX * walkSpeed;
       g.velocity.z = wishZ * walkSpeed;
-      // kill ball-bounce on landing
       if (g.velocity.y < 0) g.velocity.y *= 0.92;
       if (g.position.y < 2.2 && g.velocity.y > 0 && g.velocity.y < 6) {
         g.velocity.y *= 0.15;
@@ -1061,8 +1062,7 @@ export class GameRoom {
       g.quaternion.setFromEuler(0, ud.yaw || 0, 0);
       g.wakeUp();
 
-      // Touch = yeet (even if contact solver is soft)
-      if (sprint && best < 1.85) {
+      if (best < 1.85) {
         for (const p of this.players.values()) {
           if (!p.alive && this.phase === "playing") continue;
           const dx = p.body.position.x - g.position.x;
