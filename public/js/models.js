@@ -1,4 +1,4 @@
-/** Quaternius Ultimate Textured Buildings + Kenney Nature trees + Kenney Blaster weapons (CC0). */
+/** Quaternius buildings + Kenney nature/roads + Quaternius cars (CC0). */
 
 export const BUILDING_MODELS = [
   "1Story",
@@ -37,11 +37,18 @@ export const TREE_MODELS = [
   "tree-small",
 ];
 
-export const WEAPON_MODELS = {
-  pistol: "blaster-g",
-  sniper: "blaster-p",
-  knife: null,
-};
+export const CAR_MODELS = ["BasicCar", "Taxi", "CopCar", "SimpleCarShort", "RaceCar"];
+
+export const ROAD_MODELS = [
+  "road_straight",
+  "road_crossroad",
+  "road_crossing",
+  "road_intersection",
+  "road_bend",
+  "road_curve",
+  "road_side",
+  "light_square",
+];
 
 export function buildingModelPath(id) {
   return `/models/city/${id}.glb`;
@@ -51,6 +58,10 @@ export function treeModelPath(id) {
   return `/models/trees/${id}.glb`;
 }
 
-export function weaponModelPath(id) {
-  return `/models/weapons/${id}.glb`;
+export function carModelPath(id) {
+  return `/models/cars/${id}.glb`;
+}
+
+export function roadModelPath(id) {
+  return `/models/roads/${id}.glb`;
 }

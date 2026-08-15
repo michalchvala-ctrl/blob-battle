@@ -438,7 +438,11 @@ export class GameRoom {
   tooCloseToStructure(x, z, minDist, list = null) {
     const arr = list || this.layout?.structures || [];
     for (const s of arr) {
-      const pad = s.kind === "building" ? Math.max(s.w || 0, s.d || 0) * 0.55 : (s.r || 2) + 1;
+      if (s.kind === "road") continue;
+      const pad =
+        s.kind === "building" || s.kind === "car"
+          ? Math.max(s.w || 0, s.d || 0) * 0.55
+          : (s.r || 2) + 1;
       if (Math.hypot(x - s.x, z - s.z) < minDist + pad) return true;
     }
     return false;
@@ -533,12 +537,118 @@ export class GameRoom {
         color: i % 2 === 0 ? "#3ecf6a" : "#2aad52",
       });
     }
+
+    // Kenney road tiles along street corridors (CC0) — sparse so state stays light
+    const roadModels = ["road_straight", "road_crossing", "road_crossroad", "road_intersection"];
+    const step = cell + street; // 40
+    for (let ix = -4; ix <= 4; ix++) {
+      for (let t = -4; t <= 4; t++) {
+        const x = ix * step;
+        const z = t * 18;
+        if (Math.abs(x) > 140 || Math.abs(z) > 140) continue;
+        if (Math.hypot(x, z) < 24) continue;
+        items.push({
+          id: n++,
+          kind: "road",
+          model: Math.abs(t) % 3 === 0 ? roadModels[1] : roadModels[0],
+          x,
+          z,
+          w: 12,
+          d: 12,
+          rotY: 0,
+        });
+      }
+    }
+    for (let iz = -4; iz <= 4; iz++) {
+      for (let t = -4; t <= 4; t++) {
+        const z = iz * step;
+        const x = t * 18 + 9;
+        if (Math.abs(x) > 140 || Math.abs(z) > 140) continue;
+        if (Math.hypot(x, z) < 24) continue;
+        items.push({
+          id: n++,
+          kind: "road",
+          model: "road_straight",
+          x,
+          z,
+          w: 12,
+          d: 12,
+          rotY: Math.PI / 2,
+        });
+      }
+    }
+
+    // Parked Quaternius cars (CC0) with solid collision
+    const carModels = ["BasicCar", "Taxi", "CopCar", "SimpleCarShort", "RaceCar"];
+    for (let i = 0; i < 28; i++) {
+      const along = (i % 2 === 0);
+      const lane = ((i / 2) | 0) - 7;
+      const x = along ? lane * 18 + ((i * 3) % 7) - 3 : 22 + (i % 5) * 2;
+      const z = along ? 18 + (i % 6) * 2 : lane * 18 + ((i * 5) % 7) - 3;
+      if (Math.abs(x) > 130 || Math.abs(z) > 130) continue;
+      if (Math.hypot(x, z) < 26) continue;
+      if (this.tooCloseToStructure(x, z, 6, items)) continue;
+      items.push({
+        id: n++,
+        kind: "car",
+        model: carModels[i % carModels.length],
+        x,
+        z,
+        w: 4.4,
+        h: 1.7,
+        d: 2.2,
+        rotY: along ? Math.PI / 2 : 0,
+        color: ["#c44", "#e8c547", "#2a5caa", "#888", "#d22"][i % 5],
+      });
+    }
+
+    // Soft hills at map edges (visual + walkable slope)
+    const hills = [
+      { x: -118, z: -110, r: 22, h: 9, color: "#4a7c46" },
+      { x: 120, z: -95, r: 18, h: 7, color: "#3f6f42" },
+      { x: -105, z: 115, r: 20, h: 8, color: "#557a48" },
+      { x: 112, z: 108, r: 16, h: 6.5, color: "#466b40" },
+    ];
+    for (const hill of hills) {
+      items.push({ id: n++, kind: "hill", ...hill });
+    }
+
     this.layout.structures = items;
-    this.layoutKey += `|city:${items.length}:${items.map((s) => `${s.kind},${s.model || ""},${s.x.toFixed(0)},${s.z.toFixed(0)}`).join(";")}`;
+    this.layoutKey += `|city:${items.length}:b${items.filter((s) => s.kind === "building").length}:c${items.filter((s) => s.kind === "car").length}:r${items.filter((s) => s.kind === "road").length}`;
 
     for (const s of items) {
       if (s.kind === "building") {
         this.buildSolidBuilding(s);
+      } else if (s.kind === "car") {
+        const body = new CANNON.Body({
+          mass: 0,
+          type: CANNON.Body.STATIC,
+          material: this.boxMat,
+        });
+        const hw = (s.w || 4.2) * 0.5;
+        const hh = (s.h || 1.6) * 0.5;
+        const hd = (s.d || 2.1) * 0.5;
+        body.addShape(new CANNON.Box(new CANNON.Vec3(hw, hh, hd)));
+        body.position.set(s.x, PLATFORM_TOP + hh, s.z);
+        if (s.rotY) body.quaternion.setFromEuler(0, s.rotY, 0);
+        body.userData = { kind: "car", id: s.id, static: true, solid: true };
+        this.world.addBody(body);
+        this.structures.push(body);
+      } else if (s.kind === "hill") {
+        const body = new CANNON.Body({
+          mass: 0,
+          type: CANNON.Body.STATIC,
+          material: this.groundMat,
+        });
+        const r = s.r || 14;
+        const h = s.h || 6;
+        body.addShape(new CANNON.Sphere(r * 0.95));
+        body.position.set(s.x, PLATFORM_TOP - r * 0.95 + h * 0.55, s.z);
+        body.userData = { kind: "hill", id: s.id, static: true };
+        this.world.addBody(body);
+        this.structures.push(body);
+      } else if (s.kind === "road") {
+        // Visual only — asphalt pad already walkable
       } else {
         const body = new CANNON.Body({
           mass: 0,

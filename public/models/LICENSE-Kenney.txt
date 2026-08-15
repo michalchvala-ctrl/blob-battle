@@ -3,9 +3,14 @@
 City buildings: Quaternius — Ultimate Textured Building Pack
 https://quaternius.com / OpenGameArt (CC0)
 
-Weapons: Kenney Blaster Kit — www.kenney.nl/assets/blaster-kit (CC0)
+Cars: Quaternius — LowPoly Cars Pack
+https://opengameart.org/content/lowpoly-cars (CC0)
+
+Roads: Kenney City Kit Roads — www.kenney.nl/assets/city-kit-roads (CC0)
 
 Trees: Kenney Nature Kit — www.kenney.nl (CC0)
+
+Weapons: procedural in-game meshes (no third-party gun GLBs)
 
 License: Creative Commons Zero (CC0)
 http://creativecommons.org/publicdomain/zero/1.0/

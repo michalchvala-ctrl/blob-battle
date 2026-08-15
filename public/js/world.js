@@ -4,10 +4,12 @@ import {
   BUILDING_MODELS,
   SKYSCRAPER_MODELS,
   TREE_MODELS,
-  WEAPON_MODELS,
+  CAR_MODELS,
+  ROAD_MODELS,
   buildingModelPath,
   treeModelPath,
-  weaponModelPath,
+  carModelPath,
+  roadModelPath,
 } from "./models.js";
 
 const gradient = (() => {
@@ -26,9 +28,6 @@ const gradient = (() => {
   return tex;
 })();
 
-/** Filled when Kenney blaster GLBs finish loading */
-const weaponProtos = { pistol: null, sniper: null };
-
 function toon(color, opts = {}) {
   return new THREE.MeshToonMaterial({ color, gradientMap: gradient, ...opts });
 }
@@ -43,77 +42,114 @@ function markWeaponShadows(root) {
   return root;
 }
 
-function cloneWeaponProto(kind, scale = 1) {
-  const proto = weaponProtos[kind];
-  if (!proto) return null;
-  const g = proto.clone(true);
-  // Kenney blasters face +Z; normalize size then apply scale
-  g.updateMatrixWorld(true);
-  const box = new THREE.Box3().setFromObject(g);
-  const size = box.getSize(new THREE.Vector3());
-  const longest = Math.max(size.x, size.y, size.z) || 1;
-  const s = (kind === "sniper" ? 0.55 : 0.42) * scale / longest;
-  g.scale.setScalar(s);
-  g.updateMatrixWorld(true);
-  const box2 = new THREE.Box3().setFromObject(g);
-  const c = box2.getCenter(new THREE.Vector3());
-  g.position.sub(c);
-  // Grip toward camera / hand: shift so muzzle points +Z
-  return markWeaponShadows(g);
-}
-
-/** Prefer Kenney Blaster GLB; procedural fallback. */
+/** Low-poly pistol — grip, slide, barrel, sights (not sci-fi blaster). */
 function makePistolMesh(scale = 1) {
-  const glb = cloneWeaponProto("pistol", scale);
-  if (glb) return glb;
-  return makeProceduralPistol(scale);
-}
-
-function makeSniperMesh(scale = 1) {
-  const glb = cloneWeaponProto("sniper", scale);
-  if (glb) return glb;
-  return makeProceduralSniper(scale);
-}
-
-function makeProceduralPistol(scale = 1) {
   const g = new THREE.Group();
   const steel = toon("#2f3542");
   const dark = toon("#1a1e26");
   const gripC = toon("#3d2914");
   const accent = toon("#d6ff4a");
   const silver = toon("#9aa3b2");
+
   const grip = new THREE.Mesh(new THREE.BoxGeometry(0.09, 0.2, 0.11), gripC);
   grip.position.set(0, -0.1, 0.02);
   grip.rotation.x = 0.18;
+  const gripDetail = new THREE.Mesh(new THREE.BoxGeometry(0.095, 0.06, 0.02), dark);
+  gripDetail.position.set(0, -0.12, 0.07);
+
   const frame = new THREE.Mesh(new THREE.BoxGeometry(0.1, 0.09, 0.28), steel);
   frame.position.set(0, 0.02, 0.14);
+  const slide = new THREE.Mesh(new THREE.BoxGeometry(0.095, 0.055, 0.26), dark);
+  slide.position.set(0, 0.07, 0.13);
+  const slideRidge = new THREE.Mesh(new THREE.BoxGeometry(0.1, 0.02, 0.08), silver);
+  slideRidge.position.set(0, 0.1, 0.02);
+
   const barrel = new THREE.Mesh(new THREE.CylinderGeometry(0.028, 0.032, 0.22, 10), dark);
   barrel.rotation.x = Math.PI / 2;
   barrel.position.set(0, 0.045, 0.36);
+  const muzzle = new THREE.Mesh(new THREE.CylinderGeometry(0.034, 0.03, 0.04, 10), silver);
+  muzzle.rotation.x = Math.PI / 2;
+  muzzle.position.set(0, 0.045, 0.48);
+
+  const triggerGuard = new THREE.Mesh(new THREE.TorusGeometry(0.045, 0.012, 6, 12, Math.PI), dark);
+  triggerGuard.rotation.y = Math.PI / 2;
+  triggerGuard.position.set(0, -0.02, 0.1);
+  const trigger = new THREE.Mesh(new THREE.BoxGeometry(0.02, 0.04, 0.015), silver);
+  trigger.position.set(0, -0.01, 0.1);
+
   const frontSight = new THREE.Mesh(new THREE.BoxGeometry(0.02, 0.035, 0.02), accent);
   frontSight.position.set(0, 0.12, 0.32);
-  g.add(grip, frame, barrel, frontSight);
+  const rearSight = new THREE.Mesh(new THREE.BoxGeometry(0.05, 0.028, 0.02), accent);
+  rearSight.position.set(0, 0.115, 0.02);
+  const mag = new THREE.Mesh(new THREE.BoxGeometry(0.07, 0.12, 0.08), dark);
+  mag.position.set(0, -0.14, 0.06);
+
+  g.add(grip, gripDetail, frame, slide, slideRidge, barrel, muzzle, triggerGuard, trigger, frontSight, rearSight, mag);
   g.scale.setScalar(scale);
   return markWeaponShadows(g);
 }
 
-function makeProceduralSniper(scale = 1) {
+/** Long rifle with scope — FPS sniper + world pickup. */
+function makeSniperMesh(scale = 1) {
   const g = new THREE.Group();
   const stock = toon("#5c3a21");
   const steel = toon("#1f2937");
   const dark = toon("#111827");
   const scopeC = toon("#374151");
+  const glass = toon("#7ec8ff", { transparent: true, opacity: 0.55 });
+  const accent = toon("#ef4444");
+
   const butt = new THREE.Mesh(new THREE.BoxGeometry(0.1, 0.14, 0.28), stock);
   butt.position.set(0, -0.02, -0.22);
+  const cheek = new THREE.Mesh(new THREE.BoxGeometry(0.08, 0.08, 0.18), stock);
+  cheek.position.set(0, 0.06, -0.12);
+
   const receiver = new THREE.Mesh(new THREE.BoxGeometry(0.09, 0.1, 0.36), steel);
   receiver.position.set(0, 0.02, 0.12);
   const barrel = new THREE.Mesh(new THREE.CylinderGeometry(0.025, 0.032, 0.7, 10), dark);
   barrel.rotation.x = Math.PI / 2;
   barrel.position.set(0, 0.04, 0.55);
+  const muzzleBrake = new THREE.Mesh(new THREE.CylinderGeometry(0.04, 0.036, 0.08, 8), steel);
+  muzzleBrake.rotation.x = Math.PI / 2;
+  muzzleBrake.position.set(0, 0.04, 0.92);
+
+  const mag = new THREE.Mesh(new THREE.BoxGeometry(0.07, 0.14, 0.1), dark);
+  mag.position.set(0, -0.1, 0.08);
+  const bipodL = new THREE.Mesh(new THREE.CylinderGeometry(0.012, 0.012, 0.16, 6), steel);
+  bipodL.position.set(-0.05, -0.1, 0.55);
+  bipodL.rotation.z = 0.35;
+  const bipodR = bipodL.clone();
+  bipodR.position.x = 0.05;
+  bipodR.rotation.z = -0.35;
+
   const scopeBody = new THREE.Mesh(new THREE.CylinderGeometry(0.045, 0.045, 0.32, 12), scopeC);
   scopeBody.rotation.x = Math.PI / 2;
   scopeBody.position.set(0, 0.14, 0.1);
-  g.add(butt, receiver, barrel, scopeBody);
+  const scopeFront = new THREE.Mesh(new THREE.CylinderGeometry(0.055, 0.05, 0.06, 12), dark);
+  scopeFront.rotation.x = Math.PI / 2;
+  scopeFront.position.set(0, 0.14, 0.28);
+  const scopeLens = new THREE.Mesh(new THREE.CircleGeometry(0.04, 12), glass);
+  scopeLens.position.set(0, 0.14, 0.312);
+  const scopeMount = new THREE.Mesh(new THREE.BoxGeometry(0.04, 0.05, 0.2), steel);
+  scopeMount.position.set(0, 0.09, 0.1);
+  const laser = new THREE.Mesh(new THREE.BoxGeometry(0.025, 0.025, 0.08), accent);
+  laser.position.set(0.05, 0.0, 0.35);
+
+  g.add(
+    butt,
+    cheek,
+    receiver,
+    barrel,
+    muzzleBrake,
+    mag,
+    bipodL,
+    bipodR,
+    scopeBody,
+    scopeFront,
+    scopeLens,
+    scopeMount,
+    laser,
+  );
   g.scale.setScalar(scale);
   return markWeaponShadows(g);
 }
@@ -443,27 +479,23 @@ export class GameWorld {
         }),
       );
     }
-    for (const [kind, id] of Object.entries(WEAPON_MODELS)) {
-      if (!id) continue;
+    for (const id of CAR_MODELS) {
       jobs.push(
-        loader.loadAsync(weaponModelPath(id)).then((gltf) => {
+        loader.loadAsync(carModelPath(id)).then((gltf) => {
           this.prepareGltfScene(gltf.scene);
-          weaponProtos[kind] = gltf.scene;
-          this.gltfCache.set(`weapon:${id}`, gltf.scene);
+          this.gltfCache.set(`car:${id}`, gltf.scene);
+        }),
+      );
+    }
+    for (const id of ROAD_MODELS) {
+      jobs.push(
+        loader.loadAsync(roadModelPath(id)).then((gltf) => {
+          this.prepareGltfScene(gltf.scene);
+          this.gltfCache.set(`road:${id}`, gltf.scene);
         }),
       );
     }
     await Promise.allSettled(jobs);
-    // Swap FPS guns to GLB versions once loaded
-    this._fpsWeaponsReady = true;
-    if (this.fpsPistol) {
-      this.camera.remove(this.fpsPistol);
-      this.fpsPistol = null;
-    }
-    if (this.fpsSniper) {
-      this.camera.remove(this.fpsSniper);
-      this.fpsSniper = null;
-    }
     if (this.pendingStructures?.length) {
       const list = this.pendingStructures;
       this.clearStructures();
@@ -533,6 +565,49 @@ export class GameWorld {
       } else {
         this.makeProceduralTree(g, s);
       }
+    } else if (s.kind === "car") {
+      const modelId = s.model || CAR_MODELS[Math.abs(s.id || 0) % CAR_MODELS.length];
+      const proto = this.gltfCache.get(`car:${modelId}`);
+      const w = s.w || 4.2;
+      const h = s.h || 1.6;
+      const d = s.d || 2.1;
+      if (proto) {
+        const model = proto.clone(true);
+        this.fitGltfToBox(model, w, h, d, { uniform: true });
+        model.position.y += 0.575;
+        g.add(model);
+      } else {
+        const body = new THREE.Mesh(new THREE.BoxGeometry(w, h * 0.55, d), toon(s.color || "#c44"));
+        body.position.y = 0.575 + h * 0.35;
+        g.add(body);
+      }
+    } else if (s.kind === "road") {
+      const modelId = s.model || "road_straight";
+      const proto = this.gltfCache.get(`road:${modelId}`);
+      const w = s.w || 10;
+      const d = s.d || 10;
+      if (proto) {
+        const model = proto.clone(true);
+        this.fitGltfToBox(model, w, 0.35, d, { uniform: false });
+        model.position.y += 0.62;
+        g.add(model);
+      } else {
+        const asphalt = new THREE.Mesh(new THREE.BoxGeometry(w, 0.12, d), toon("#2b2f36"));
+        asphalt.position.y = 0.62;
+        g.add(asphalt);
+      }
+    } else if (s.kind === "hill") {
+      const r = s.r || 14;
+      const h = s.h || 6;
+      const hill = new THREE.Mesh(
+        new THREE.SphereGeometry(r, 16, 12, 0, Math.PI * 2, 0, Math.PI * 0.5),
+        toon(s.color || "#4a7c46"),
+      );
+      hill.scale.set(1, h / r, 1);
+      hill.position.y = 0.575;
+      hill.receiveShadow = true;
+      hill.castShadow = true;
+      g.add(hill);
     } else {
       const modelId = s.model || BUILDING_MODELS[Math.abs(s.id || 0) % BUILDING_MODELS.length];
       const proto = this.gltfCache.get(`building:${modelId}`);
@@ -1052,39 +1127,56 @@ export class GameWorld {
 
   spawnShotTrail(ev) {
     if (!ev) return;
-    // Flying projectile (50% slower than old instant beam feel)
+    // Elongated tracer streak (not ball “guličky”)
     if (ev.speed != null && ev.dx != null) {
       const speed = ev.speed;
       const range = ev.range || 120;
       const dir = new THREE.Vector3(ev.dx, ev.dy || 0, ev.dz).normalize();
-      const geo = new THREE.SphereGeometry(0.18, 8, 6);
-      const mat = new THREE.MeshBasicMaterial({ color: "#ffe66d" });
-      const mesh = new THREE.Mesh(geo, mat);
-      mesh.position.set(ev.x0, ev.y0 || 0, ev.z0);
-      this.scene.add(mesh);
+      const sniper = (ev.weapon || ev.kind) === "sniper";
+      const len = sniper ? 1.6 : 1.05;
+      const rad = sniper ? 0.035 : 0.028;
       const trail = new THREE.Mesh(
-        new THREE.CylinderGeometry(0.04, 0.04, 0.9, 5),
-        new THREE.MeshBasicMaterial({ color: "#ffb703", transparent: true, opacity: 0.7 }),
+        new THREE.CylinderGeometry(rad * 0.45, rad, len, 6),
+        new THREE.MeshBasicMaterial({
+          color: sniper ? "#ff6b4a" : "#ffe66d",
+          transparent: true,
+          opacity: 0.95,
+        }),
       );
       trail.quaternion.setFromUnitVectors(new THREE.Vector3(0, 1, 0), dir);
+      trail.position.set(ev.x0, ev.y0 || 0, ev.z0);
       this.scene.add(trail);
+      const glow = new THREE.Mesh(
+        new THREE.CylinderGeometry(rad * 1.6, rad * 0.8, len * 0.55, 5),
+        new THREE.MeshBasicMaterial({
+          color: sniper ? "#ffb39a" : "#ffb703",
+          transparent: true,
+          opacity: 0.45,
+        }),
+      );
+      glow.quaternion.copy(trail.quaternion);
+      this.scene.add(glow);
       const born = performance.now();
       const dur = (range / speed) * 1000;
       const tick = () => {
         const age = (performance.now() - born) / dur;
         if (age >= 1) {
-          this.scene.remove(mesh);
           this.scene.remove(trail);
-          geo.dispose();
-          mat.dispose();
+          this.scene.remove(glow);
           trail.geometry.dispose();
           trail.material.dispose();
+          glow.geometry.dispose();
+          glow.material.dispose();
           return;
         }
         const d = age * range;
-        mesh.position.set(ev.x0 + dir.x * d, (ev.y0 || 0) + dir.y * d, ev.z0 + dir.z * d);
-        trail.position.copy(mesh.position).addScaledVector(dir, -0.45);
-        trail.material.opacity = 0.7 * (1 - age * 0.5);
+        const px = ev.x0 + dir.x * d;
+        const py = (ev.y0 || 0) + dir.y * d;
+        const pz = ev.z0 + dir.z * d;
+        trail.position.set(px, py, pz);
+        glow.position.set(px - dir.x * len * 0.25, py - dir.y * len * 0.25, pz - dir.z * len * 0.25);
+        trail.material.opacity = 0.95 * (1 - age * 0.35);
+        glow.material.opacity = 0.45 * (1 - age * 0.5);
         requestAnimationFrame(tick);
       };
       requestAnimationFrame(tick);
@@ -1957,14 +2049,6 @@ export class GameWorld {
   }
 
   updateFpsGun() {
-    // Recreate once GLB blasters are ready (first frames may use procedural fallback)
-    if (this._fpsWeaponsReady && !this._fpsWeaponsApplied) {
-      if (this.fpsPistol) this.camera.remove(this.fpsPistol);
-      if (this.fpsSniper) this.camera.remove(this.fpsSniper);
-      this.fpsPistol = null;
-      this.fpsSniper = null;
-      this._fpsWeaponsApplied = true;
-    }
     if (!this.fpsPistol) {
       this.fpsPistol = makePistolMesh(2.4);
       this.camera.add(this.fpsPistol);
