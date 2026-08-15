@@ -32,6 +32,20 @@ function toon(color, opts = {}) {
   return new THREE.MeshToonMaterial({ color, gradientMap: gradient, ...opts });
 }
 
+/** Opaque car paint — MeshToon was reading as translucent on these GLBs. */
+function carBodyMat(color, opts = {}) {
+  return new THREE.MeshStandardMaterial({
+    color,
+    roughness: 0.48,
+    metalness: 0.22,
+    transparent: false,
+    opacity: 1,
+    depthWrite: true,
+    side: THREE.FrontSide,
+    ...opts,
+  });
+}
+
 function markWeaponShadows(root) {
   root.traverse((o) => {
     if (o.isMesh) {
@@ -1310,20 +1324,22 @@ export class GameWorld {
     if (proto) {
       const model = proto.clone(true);
       this.fitGltfToBox(model, width, height, length, { uniform: true });
-      // Keep fitGltfToBox bottom-at-0 offset — do NOT reset position.y
       this.paintVehicleModel(model, bodyColor);
       g.add(model);
     } else {
-      const body = new THREE.Mesh(new THREE.BoxGeometry(width, height * 0.5, length), toon(bodyColor));
+      const body = new THREE.Mesh(
+        new THREE.BoxGeometry(width, height * 0.5, length),
+        carBodyMat(bodyColor),
+      );
       body.position.y = height * 0.28;
       g.add(body);
     }
     g.userData.isVehicle = true;
     g.userData.bodyColor = bodyColor;
-    g.userData.groundY = PLATFORM_TOP + 0.06;
+    // Lift so wheels sit on asphalt, not through it
+    g.userData.groundY = PLATFORM_TOP + 0.14;
     g.userData.exhaust = [];
     g.position.set(d.x, g.userData.groundY, d.z);
-    // Mesh faces +Z; movement uses -Z at yaw 0 → flip π
     g.rotation.y = (d.yaw ?? 0) + Math.PI;
     return g;
   }
@@ -1332,17 +1348,27 @@ export class GameWorld {
     model.traverse((o) => {
       if (!o.isMesh) return;
       if (o.geometry?.attributes?.color) o.geometry.deleteAttribute("color");
-      const n = `${o.name || ""}`.toLowerCase();
-      let col = bodyColor;
-      if (n.includes("wheel") || n.includes("tire") || n.includes("cylinder")) col = "#1a1a1a";
-      else if (n.includes("glass") || n.includes("window") || n.includes("windshield")) {
-        o.material = toon("#8ec8e8", { transparent: true, opacity: 0.45 });
-        o.castShadow = true;
-        return;
-      } else if (n.includes("light") || n.includes("lamp")) col = "#ffe566";
-      o.material = toon(col);
-      o.material.vertexColors = false;
-      o.material.needsUpdate = true;
+      // Break shared materials from GLTF clone
+      const n = `${o.name || ""} ${o.material?.name || ""}`.toLowerCase();
+      const isWheel = /wheel|tire|cylinder/.test(n);
+      const isGlass = /glass|window|windshield|wind/.test(n);
+      const isLight = /light|lamp|emissive/.test(n);
+      if (isGlass) {
+        o.material = new THREE.MeshStandardMaterial({
+          color: "#6eb8e8",
+          transparent: true,
+          opacity: 0.35,
+          roughness: 0.15,
+          metalness: 0.4,
+          depthWrite: false,
+        });
+      } else if (isWheel) {
+        o.material = carBodyMat("#1a1a1a", { roughness: 0.9, metalness: 0.05 });
+      } else if (isLight) {
+        o.material = carBodyMat("#ffe566", { roughness: 0.35, metalness: 0.4, emissive: "#cca822", emissiveIntensity: 0.35 });
+      } else {
+        o.material = carBodyMat(bodyColor);
+      }
       o.castShadow = true;
       o.receiveShadow = true;
     });

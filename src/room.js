@@ -674,13 +674,13 @@ export class GameRoom {
       const hw = (s.w || 4.2) * 0.48;
       const hh = 0.55;
       const hd = (s.d || 2.0) * 0.48;
-      const rideY = PLATFORM_TOP + hh + 0.1;
+      const rideY = PLATFORM_TOP + hh + 0.2;
       const body = new CANNON.Body({
-        mass: 140,
+        mass: 160,
         material: this.boxMat,
         shape: new CANNON.Box(new CANNON.Vec3(hw, hh, hd)),
         position: new CANNON.Vec3(s.x, rideY, s.z),
-        linearDamping: 0.35,
+        linearDamping: 0.22,
         angularDamping: 0.99,
         fixedRotation: true,
       });
@@ -2062,23 +2062,41 @@ export class GameRoom {
     let speed = v.userData.speed || 0;
     const throttle = p.input.mz || 0;
     const steer = -(p.input.mx || 0);
-    const maxFwd = p.input.sprint ? 58 : 44;
+    const sprint = !!p.input.sprint;
+    const maxFwd = sprint ? 54 : 40;
     const maxRev = maxFwd * 0.5;
-    if (throttle > 0.08) speed = this.approach(speed, maxFwd * throttle, 70 * dt);
-    else if (throttle < -0.08) speed = this.approach(speed, -maxRev * Math.abs(throttle), 55 * dt);
-    else speed = this.approach(speed, 0, 40 * dt);
 
-    if (Math.abs(speed) > 0.5) {
-      const turn = steer * dt * (2.6 * Math.min(1.2, Math.abs(speed) / 10)) * Math.sign(speed);
+    // Stronger pull from standstill, softer near top speed
+    if (throttle > 0.08) {
+      const room = 1 - Math.min(1, Math.max(0, speed) / maxFwd);
+      const accel = (sprint ? 62 : 48) * (0.45 + room * 0.7);
+      speed = this.approach(speed, maxFwd * throttle, accel * dt);
+    } else if (throttle < -0.08) {
+      const room = 1 - Math.min(1, Math.max(0, -speed) / maxRev);
+      speed = this.approach(speed, -maxRev * Math.abs(throttle), (42 * (0.5 + room * 0.6)) * dt);
+    } else {
+      // Engine brake — snappier stop
+      speed = this.approach(speed, 0, (Math.abs(speed) > 18 ? 52 : 34) * dt);
+    }
+
+    // Steering: tight at low/mid speed, locks out at very high speed
+    const absSpd = Math.abs(speed);
+    if (absSpd > 0.4) {
+      const grip = Math.min(1, absSpd / 7);
+      const highSpeedPenalty = 1 - Math.min(0.55, (absSpd / maxFwd) * 0.65);
+      const turn = steer * dt * (2.85 * grip * highSpeedPenalty) * Math.sign(speed);
       v.userData.yaw = (v.userData.yaw || 0) + turn;
     }
+
     const yaw = v.userData.yaw || 0;
     const fx = -Math.sin(yaw);
     const fz = -Math.cos(yaw);
-    const rideY = v.userData.rideY ?? PLATFORM_TOP + 0.65;
+    const rideY = v.userData.rideY ?? PLATFORM_TOP + 0.75;
+    // Project onto forward axis — no sideways slide
     v.velocity.set(fx * speed, 0, fz * speed);
     v.position.y = rideY;
     v.quaternion.setFromEuler(0, yaw, 0);
+    v.linearDamping = absSpd > 1 ? 0.12 : 0.28;
     v.userData.speed = speed;
     v.wakeUp();
 
