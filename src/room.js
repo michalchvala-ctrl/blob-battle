@@ -549,11 +549,13 @@ export class GameRoom {
 
   spawnDebris() {
     if (this.debris.length >= this.maxDebris) return;
-    const kinds = ["box", "sphere", "cylinder"];
+    const kinds = ["box", "box", "box", "sphere", "cylinder"];
     const kind = kinds[(Math.random() * kinds.length) | 0];
-    const palette = [...COLORS, "#5ce1ff", "#ff7ad9", "#fff1a8", "#ff9e00"];
+    const palette = [...COLORS, "#5ce1ff", "#ff7ad9", "#fff1a8", "#ff9e00", "#c77dff"];
     const color = palette[(Math.random() * palette.length) | 0];
-    const huge = this.mode === "guns" || this.platformRadius > 40;
+    const hugeMap = this.mode === "guns" || this.platformRadius > 40;
+    // House-sized chunks often on big maps; still chunky elsewhere
+    const house = hugeMap ? Math.random() < 0.62 : Math.random() < 0.12;
 
     let x;
     let z;
@@ -575,16 +577,26 @@ export class GameRoom {
       x = Math.cos(ang) * r;
       z = Math.sin(ang) * r;
     }
-    if (this.tooCloseToStructure(x, z, 3)) return;
-    const y = (huge ? 18 : 13) + Math.random() * (huge ? 12 : 7);
+    if (this.tooCloseToStructure(x, z, house ? 8 : 3)) return;
+    const y = house ? 42 + Math.random() * 38 : (hugeMap ? 22 : 13) + Math.random() * (hugeMap ? 16 : 7);
 
     let shape;
     let sx;
     let sy;
     let sz;
     let mass;
-    const scale = huge ? 2.4 + Math.random() * 2.2 : 1;
-    if (kind === "sphere") {
+    if (house) {
+      // ~house footprint: 6–14 m wide, 5–12 m tall
+      const hx = 3.2 + Math.random() * 4.2;
+      const hy = 2.6 + Math.random() * 3.8;
+      const hz = 3.2 + Math.random() * 4.2;
+      shape = new CANNON.Box(new CANNON.Vec3(hx, hy, hz));
+      sx = hx * 2;
+      sy = hy * 2;
+      sz = hz * 2;
+      mass = 80 + hx * hy * hz * 4;
+    } else if (kind === "sphere") {
+      const scale = hugeMap ? 2.2 + Math.random() * 2.5 : 1;
       const rad = (0.52 + Math.random() * 0.85) * scale;
       shape = new CANNON.Sphere(rad);
       sx = rad;
@@ -592,6 +604,7 @@ export class GameRoom {
       sz = rad;
       mass = 2.2 + rad * 5;
     } else if (kind === "cylinder") {
+      const scale = hugeMap ? 2.2 + Math.random() * 2.5 : 1;
       const rad = (0.42 + Math.random() * 0.65) * scale;
       const h = (0.85 + Math.random() * 1.5) * scale;
       shape = cylinder(rad, rad, h, 12);
@@ -600,6 +613,7 @@ export class GameRoom {
       sz = rad;
       mass = 2.8 + rad * h * 5;
     } else {
+      const scale = hugeMap ? 2.4 + Math.random() * 3.2 : 1.2 + Math.random() * 0.8;
       const hx = (0.45 + Math.random() * 0.85) * scale;
       const hy = (0.45 + Math.random() * 0.85) * scale;
       const hz = (0.45 + Math.random() * 0.85) * scale;
@@ -615,16 +629,16 @@ export class GameRoom {
       material: this.boxMat,
       shape,
       position: new CANNON.Vec3(x, y, z),
-      linearDamping: 0.12,
-      angularDamping: 0.18,
+      linearDamping: house ? 0.06 : 0.12,
+      angularDamping: house ? 0.1 : 0.18,
     });
-    body.velocity.set((Math.random() - 0.5) * 3, -1.5 - Math.random() * 2, (Math.random() - 0.5) * 3);
+    body.velocity.set((Math.random() - 0.5) * 4, -2 - Math.random() * 3, (Math.random() - 0.5) * 4);
     body.angularVelocity.set(
-      (Math.random() - 0.5) * 4,
-      (Math.random() - 0.5) * 4,
-      (Math.random() - 0.5) * 4,
+      (Math.random() - 0.5) * (house ? 1.2 : 4),
+      (Math.random() - 0.5) * (house ? 1.2 : 4),
+      (Math.random() - 0.5) * (house ? 1.2 : 4),
     );
-    body.userData = { id: this.debrisNextId++, kind, color, sx, sy, sz };
+    body.userData = { id: this.debrisNextId++, kind: house ? "box" : kind, color, sx, sy, sz, house: !!house };
     this.world.addBody(body);
     this.debris.push(body);
   }
@@ -754,9 +768,10 @@ export class GameRoom {
     }
   }
 
-  /** Steer goats: slow trot toward nearest player / wander. */
+  /** Steer goats: fast charge toward nearest player / wander. */
   steerGoats(dt) {
     if (!this.goats.length) return;
+    const chaseRange = this.platformRadius > 40 ? 220 : 48;
     for (const g of this.goats) {
       const ud = g.userData;
       ud.chargeT = (ud.chargeT || 0) - dt;
@@ -776,7 +791,7 @@ export class GameRoom {
       }
       let wishX = 0;
       let wishZ = 0;
-      if (tx != null && best < 32) {
+      if (tx != null && best < chaseRange) {
         const inv = best > 0.15 ? 1 / best : 0;
         wishX = tx * inv;
         wishZ = tz * inv;
@@ -784,14 +799,14 @@ export class GameRoom {
         const ang = Math.random() * Math.PI * 2;
         wishX = Math.cos(ang);
         wishZ = Math.sin(ang);
-        ud.chargeT = 1.5 + Math.random() * 2;
+        ud.chargeT = 0.8 + Math.random() * 1.4;
       } else {
         wishX = -Math.sin(ud.yaw || 0);
         wishZ = -Math.cos(ud.yaw || 0);
       }
-      // trot a bit faster, still readable as walking
-      const walkSpeed = 5.8;
-      const accel = 14;
+      const sprint = tx != null && best < chaseRange;
+      const walkSpeed = sprint ? 19.5 : 12;
+      const accel = sprint ? 55 : 28;
       g.velocity.x = this.approach(g.velocity.x, wishX * walkSpeed, accel * dt);
       g.velocity.z = this.approach(g.velocity.z, wishZ * walkSpeed, accel * dt);
       // kill ball-bounce on landing
@@ -804,7 +819,50 @@ export class GameRoom {
       }
       g.quaternion.setFromEuler(0, ud.yaw || 0, 0);
       g.wakeUp();
+
+      // Touch = yeet (even if contact solver is soft)
+      if (sprint && best < 1.85) {
+        for (const p of this.players.values()) {
+          if (!p.alive && this.phase === "playing") continue;
+          const dx = p.body.position.x - g.position.x;
+          const dy = p.body.position.y - g.position.y;
+          const dz = p.body.position.z - g.position.z;
+          if (Math.hypot(dx, dy, dz) > 2.1) continue;
+          this.yeetPlayerByGoat(p, g);
+        }
+      }
     }
+  }
+
+  yeetPlayerByGoat(player, goat) {
+    const ud = goat.userData;
+    if ((ud.lastHitT || 0) + 0.35 > this.roundT) return;
+    ud.lastHitT = this.roundT;
+    const gx = goat.velocity.x;
+    const gz = goat.velocity.z;
+    const spd = Math.hypot(gx, gz);
+    let dx;
+    let dz;
+    if (spd > 1.2) {
+      dx = gx / spd;
+      dz = gz / spd;
+    } else {
+      dx = player.body.position.x - goat.position.x;
+      dz = player.body.position.z - goat.position.z;
+      const len = Math.hypot(dx, dz) || 1;
+      dx /= len;
+      dz /= len;
+    }
+    const pb = player.body;
+    const kick = 26 + Math.min(10, spd * 0.35);
+    pb.velocity.x += dx * kick;
+    pb.velocity.z += dz * kick;
+    pb.velocity.y += 10;
+    pb.wakeUp();
+    goat.velocity.x *= 0.75;
+    goat.velocity.z *= 0.75;
+    goat.wakeUp();
+    this.events.push({ type: "goatHit", id: player.id });
   }
 
   /** Kick oldest debris off the list so rim chunks always fit. */
@@ -1241,9 +1299,14 @@ export class GameRoom {
       // Top/bottom contact (standing on a cube) — never yeet. Goats always ram.
       if (!isGoat && Math.abs(ny) > 0.72) continue;
 
+      if (isGoat) {
+        this.yeetPlayerByGoat(player, prop);
+        continue;
+      }
+
       // How fast the prop is moving into the player along the contact normal.
       const propInto = prop.velocity.x * nx + prop.velocity.y * ny + prop.velocity.z * nz;
-      const minInto = isGoat ? 2.4 : 5.2;
+      const minInto = 5.2;
       if (propInto < minInto) continue;
 
       const key = `${player.id}:${prop.id}`;
@@ -1251,9 +1314,7 @@ export class GameRoom {
       hitPairs.add(key);
 
       const excess = propInto - minInto;
-      const strength = isGoat
-        ? Math.min(24, 11 + excess * 1.45)
-        : Math.min(14, 5.5 + excess * 0.85);
+      const strength = Math.min(14, 5.5 + excess * 0.85);
       const hx = nx;
       const hz = nz;
       const hLen = Math.hypot(hx, hz);
@@ -1264,25 +1325,13 @@ export class GameRoom {
       const pb = player.body;
       pb.velocity.x += dx * strength;
       pb.velocity.z += dz * strength;
-      pb.velocity.y += isGoat
-        ? Math.min(9, 2.8 + excess * 0.38)
-        : Math.min(5.5, 1.2 + excess * 0.22);
+      pb.velocity.y += Math.min(5.5, 1.2 + excess * 0.22);
       pb.wakeUp();
 
-      // Slight rebound so the cube doesn't stick / pass through.
-      const rebound = isGoat ? 0.12 : 0.28;
-      prop.velocity.x -= dx * strength * rebound;
-      prop.velocity.z -= dz * strength * rebound;
-      prop.velocity.y += isGoat ? 1.4 : 0.8;
+      prop.velocity.x -= dx * strength * 0.28;
+      prop.velocity.z -= dz * strength * 0.28;
+      prop.velocity.y += 0.8;
       prop.wakeUp();
-
-      if (isGoat) {
-        const ud = prop.userData;
-        if ((ud.lastHitT || 0) + 0.4 < this.roundT) {
-          ud.lastHitT = this.roundT;
-          this.events.push({ type: "goatHit", id: player.id });
-        }
-      }
     }
   }
 
@@ -1337,7 +1386,10 @@ export class GameRoom {
       this.debrisSpawnT -= dt;
       if (this.debrisSpawnT <= 0) {
         this.spawnDebris();
-        this.debrisSpawnT = 3 + Math.random() * 3;
+        this.debrisSpawnT =
+          this.mode === "guns" || this.platformRadius > 40
+            ? 2.2 + Math.random() * 2.8
+            : 3 + Math.random() * 3;
       }
       this.goatSpawnT -= dt;
       if (this.goatSpawnT <= 0) {
