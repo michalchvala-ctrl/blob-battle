@@ -1,10 +1,11 @@
-Kenney 3D assets (CC0)
+3D assets (CC0)
 
-Buildings: City Kit Commercial — www.kenney.nl/assets/city-kit-commercial
-Trees: Nature Kit + City Kit Suburban — www.kenney.nl
+City buildings: Quaternius — Ultimate Textured Building Pack
+https://quaternius.com / OpenGameArt (CC0)
+
+Weapons: Kenney Blaster Kit — www.kenney.nl/assets/blaster-kit (CC0)
+
+Trees: Kenney Nature Kit — www.kenney.nl (CC0)
 
 License: Creative Commons Zero (CC0)
 http://creativecommons.org/publicdomain/zero/1.0/
-
-Created/distributed by Kenney (www.kenney.nl)
-Support by crediting "Kenney" or "www.kenney.nl" (not required)

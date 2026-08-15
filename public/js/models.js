@@ -1,28 +1,27 @@
-/** Kenney CC0 City Kit Commercial + Nature trees (see /models/LICENSE-Kenney.txt). */
+/** Quaternius Ultimate Textured Buildings + Kenney Nature trees + Kenney Blaster weapons (CC0). */
 
 export const BUILDING_MODELS = [
-  "building-a",
-  "building-b",
-  "building-c",
-  "building-d",
-  "building-e",
-  "building-f",
-  "building-g",
-  "building-h",
-  "building-i",
-  "building-j",
-  "building-k",
-  "building-l",
-  "building-m",
-  "building-n",
+  "1Story",
+  "1Story_Sign",
+  "2Story",
+  "2Story_Balcony",
+  "2Story_Wide",
+  "2Story_Wide_2Doors",
+  "3Story_Balcony",
+  "3Story_Slim",
+  "4Story",
+  "4Story_Center",
+  "4Story_Wide_2Doors",
+  "6Story_Stack",
 ];
 
+/** Taller Quaternius buildings used as “skyscraper” slots. */
 export const SKYSCRAPER_MODELS = [
-  "building-skyscraper-a",
-  "building-skyscraper-b",
-  "building-skyscraper-c",
-  "building-skyscraper-d",
-  "building-skyscraper-e",
+  "4Story",
+  "4Story_Center",
+  "4Story_Wide_2Doors",
+  "6Story_Stack",
+  "3Story_Balcony",
 ];
 
 export const TREE_MODELS = [
@@ -38,10 +37,20 @@ export const TREE_MODELS = [
   "tree-small",
 ];
 
+export const WEAPON_MODELS = {
+  pistol: "blaster-g",
+  sniper: "blaster-p",
+  knife: null,
+};
+
 export function buildingModelPath(id) {
-  return `/models/buildings/${id}.glb`;
+  return `/models/city/${id}.glb`;
 }
 
 export function treeModelPath(id) {
   return `/models/trees/${id}.glb`;
+}
+
+export function weaponModelPath(id) {
+  return `/models/weapons/${id}.glb`;
 }

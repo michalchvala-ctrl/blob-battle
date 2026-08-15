@@ -450,27 +450,21 @@ export class GameRoom {
     this.ladders = [];
     const items = [];
     const lowModels = [
-      "building-a",
-      "building-b",
-      "building-c",
-      "building-d",
-      "building-e",
-      "building-f",
-      "building-g",
-      "building-h",
-      "building-i",
-      "building-j",
-      "building-k",
-      "building-l",
-      "building-m",
-      "building-n",
+      "1Story",
+      "1Story_Sign",
+      "2Story",
+      "2Story_Balcony",
+      "2Story_Wide",
+      "2Story_Wide_2Doors",
+      "3Story_Balcony",
+      "3Story_Slim",
     ];
     const skyModels = [
-      "building-skyscraper-a",
-      "building-skyscraper-b",
-      "building-skyscraper-c",
-      "building-skyscraper-d",
-      "building-skyscraper-e",
+      "4Story",
+      "4Story_Center",
+      "4Story_Wide_2Doors",
+      "6Story_Stack",
+      "3Story_Balcony",
     ];
     const treeModels = [
       "tree_oak",
@@ -500,9 +494,9 @@ export class GameRoom {
         const model = tall
           ? skyModels[n % skyModels.length]
           : lowModels[n % lowModels.length];
-        const w = tall ? 14 + (n % 3) * 2 : 12 + (n % 4);
-        const d = tall ? 14 + ((n * 2) % 3) * 2 : 12 + ((n * 3) % 4);
-        const h = tall ? 28 + (n % 5) * 4 : 10 + (n % 6) * 2;
+        const w = tall ? 16 + (n % 3) * 2 : 12 + (n % 4);
+        const d = tall ? 14 + ((n * 2) % 3) * 2 : 11 + ((n * 3) % 4);
+        const h = tall ? 22 + (n % 5) * 5 : 9 + (n % 5) * 2.5;
         items.push({
           id: n,
           kind: "building",
