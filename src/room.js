@@ -384,7 +384,8 @@ export class GameRoom {
 
     if (layout.id === "battlefield" || this.mode === "guns") {
       this.spawnBattlefieldDecor();
-      this.maxDebris = 28;
+      // No falling junk spheres/boxes from the old sumo map — buildings + pickups only
+      this.maxDebris = 0;
     } else {
       this.maxDebris = 18;
       this.layout.structures = [];
@@ -397,7 +398,9 @@ export class GameRoom {
       [-2.2, 4.5, "#ff9e00"],
       [3.8, -5.1, "#80ffdb"],
     ];
-    // On huge guns maps, scatter a few more props across the pad
+    // Skip colorful walkable crates on the guns battlefield
+    if (this.mode !== "guns" && layout.id !== "battlefield") {
+    // On huge maps (non-guns), scatter a few more props across the pad
     if (this.platformRadius > 40) {
       const R = this.platformRadius * 0.55;
       const extra = ["#5ce1ff", "#d6ff4a", "#c77dff", "#ff9e00", "#80ffdb", "#ff7ad9"];
@@ -423,6 +426,7 @@ export class GameRoom {
       this.world.addBody(body);
       this.boxes.push(body);
       if (this.boxes.length >= (this.platformRadius > 40 ? 16 : 3)) break;
+    }
     }
   }
 
@@ -796,6 +800,7 @@ export class GameRoom {
   }
 
   spawnDebris() {
+    if (this.mode === "guns") return;
     if (this.debris.length >= this.maxDebris) return;
     const kinds = ["box", "box", "box", "sphere", "cylinder"];
     const kind = kinds[(Math.random() * kinds.length) | 0];
@@ -1732,13 +1737,12 @@ export class GameRoom {
     }
 
     if (this.phase === "lobby" || this.phase === "playing") {
-      this.debrisSpawnT -= dt;
-      if (this.debrisSpawnT <= 0) {
-        this.spawnDebris();
-        this.debrisSpawnT =
-          this.mode === "guns" || this.platformRadius > 40
-            ? 2.2 + Math.random() * 2.8
-            : 3 + Math.random() * 3;
+      if (this.mode !== "guns") {
+        this.debrisSpawnT -= dt;
+        if (this.debrisSpawnT <= 0) {
+          this.spawnDebris();
+          this.debrisSpawnT = 3 + Math.random() * 3;
+        }
       }
       this.goatSpawnT -= dt;
       if (this.goatSpawnT <= 0) {
