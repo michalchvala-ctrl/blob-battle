@@ -34,7 +34,9 @@ function makeLabel(text) {
   ctx.fillText(text.slice(0, 16), 160, 52);
   const tex = new THREE.CanvasTexture(c);
   tex.needsUpdate = true;
-  const spr = new THREE.Sprite(new THREE.SpriteMaterial({ map: tex, transparent: true, depthTest: false }));
+  const spr = new THREE.Sprite(
+    new THREE.SpriteMaterial({ map: tex, transparent: true, depthTest: true, depthWrite: false }),
+  );
   spr.scale.set(2.4, 0.6, 1);
   spr.position.y = 1.75;
   spr.userData.tex = tex;
@@ -1068,7 +1070,7 @@ export class GameWorld {
       m.rotation.z = 0;
       m.visible = p.y > -20;
       const ud = m.userData;
-      ud.label.visible = !local;
+      ud.label.visible = !local && !this.gunsMode && !!p.alive;
       const spd = Math.hypot(p.vx, p.vz);
       const wobble = p.alive && spd > 0.8 ? Math.sin(t * 8) * Math.min(0.35, spd * 0.04) : 0;
 
