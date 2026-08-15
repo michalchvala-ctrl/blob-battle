@@ -53,4 +53,42 @@ export const sfx = {
     beep(160, 0.08, "triangle", 0.05, -40);
     beep(90, 0.12, "sawtooth", 0.04, 30);
   },
+  /** Low rumbling engine loop while driving */
+  _engine: null,
+  engine(speed = 0) {
+    const a = ac();
+    if (!this._engine) {
+      const o = a.createOscillator();
+      const o2 = a.createOscillator();
+      const g = a.createGain();
+      const f = a.createBiquadFilter();
+      o.type = "sawtooth";
+      o2.type = "square";
+      f.type = "lowpass";
+      f.frequency.value = 420;
+      g.gain.value = 0.0001;
+      o.connect(f);
+      o2.connect(f);
+      f.connect(g);
+      g.connect(a.destination);
+      o.start();
+      o2.start();
+      this._engine = { o, o2, g, f };
+    }
+    const e = this._engine;
+    const spd = Math.abs(speed);
+    if (spd < 1.5) {
+      e.g.gain.linearRampToValueAtTime(0.0001, a.currentTime + 0.08);
+      return;
+    }
+    const rpm = 55 + spd * 2.4;
+    e.o.frequency.linearRampToValueAtTime(rpm, a.currentTime + 0.05);
+    e.o2.frequency.linearRampToValueAtTime(rpm * 0.5, a.currentTime + 0.05);
+    e.f.frequency.linearRampToValueAtTime(280 + spd * 8, a.currentTime + 0.05);
+    e.g.gain.linearRampToValueAtTime(Math.min(0.07, 0.02 + spd * 0.0012), a.currentTime + 0.05);
+  },
+  engineStop() {
+    if (!this._engine || !ctx) return;
+    this._engine.g.gain.linearRampToValueAtTime(0.0001, ctx.currentTime + 0.1);
+  },
 };

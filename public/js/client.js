@@ -251,8 +251,15 @@ socket.on("st", (st) => {
       world.snapCam = true;
     }
     world.inVehicle = nowInCar;
+    if (nowInCar && me.vehicleId != null) {
+      const car = (st.debris || []).find((d) => d.kind === "vehicle" && d.id === me.vehicleId);
+      sfx.engine(car?.speed ?? Math.hypot(me.vx || 0, me.vz || 0));
+    } else {
+      sfx.engineStop();
+    }
   } else {
     world.inVehicle = false;
+    sfx.engineStop();
   }
   const aliveN = st.players.filter((p) => p.alive).length;
   if (st.mode === "guns" && st.phase === "playing") {

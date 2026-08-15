@@ -1309,23 +1309,22 @@ export class GameWorld {
     const PLATFORM_TOP = 0.575;
     if (proto) {
       const model = proto.clone(true);
-      // Car GLB is ~2(w) x 2(h) x 4.2(l) — fit length to Z
       this.fitGltfToBox(model, width, height, length, { uniform: true });
-      // Bottom flush on asphalt; group sits on ground (ignore physics y for visual)
-      model.position.y = 0;
+      // Keep fitGltfToBox bottom-at-0 offset — do NOT reset position.y
       this.paintVehicleModel(model, bodyColor);
       g.add(model);
-      g.userData.groundY = PLATFORM_TOP + 0.04;
     } else {
       const body = new THREE.Mesh(new THREE.BoxGeometry(width, height * 0.5, length), toon(bodyColor));
       body.position.y = height * 0.28;
       g.add(body);
-      g.userData.groundY = PLATFORM_TOP + 0.04;
     }
     g.userData.isVehicle = true;
     g.userData.bodyColor = bodyColor;
+    g.userData.groundY = PLATFORM_TOP + 0.06;
+    g.userData.exhaust = [];
     g.position.set(d.x, g.userData.groundY, d.z);
-    g.rotation.y = d.yaw ?? 0;
+    // Mesh faces +Z; movement uses -Z at yaw 0 → flip π
+    g.rotation.y = (d.yaw ?? 0) + Math.PI;
     return g;
   }
 
@@ -1341,13 +1340,55 @@ export class GameWorld {
         o.castShadow = true;
         return;
       } else if (n.includes("light") || n.includes("lamp")) col = "#ffe566";
-      // Body meshes often named Car_Cube / Cube — paint all non-wheel
       o.material = toon(col);
       o.material.vertexColors = false;
       o.material.needsUpdate = true;
       o.castShadow = true;
       o.receiveShadow = true;
     });
+  }
+
+  updateVehicleExhaust(mesh, d, dt) {
+    const spd = Math.abs(d.speed ?? Math.hypot(d.vx || 0, d.vz || 0));
+    if (!mesh.userData.exhaust) mesh.userData.exhaust = [];
+    const parts = mesh.userData.exhaust;
+    if (spd > 4) {
+      const yaw = d.yaw ?? 0;
+      // Exhaust behind car (opposite of forward -sin/-cos)
+      for (let i = 0; i < (spd > 20 ? 2 : 1); i++) {
+        const puff = new THREE.Mesh(
+          new THREE.SphereGeometry(0.12 + Math.random() * 0.1, 6, 5),
+          new THREE.MeshBasicMaterial({ color: "#9aa3ad", transparent: true, opacity: 0.55 }),
+        );
+        const back = 2.1 + Math.random() * 0.3;
+        puff.position.set(
+          mesh.position.x + Math.sin(yaw) * back + (Math.random() - 0.5) * 0.35,
+          mesh.position.y + 0.4,
+          mesh.position.z + Math.cos(yaw) * back + (Math.random() - 0.5) * 0.35,
+        );
+        puff.userData.life = 0.45 + Math.random() * 0.25;
+        puff.userData.vx = Math.sin(yaw) * 1.2 + (Math.random() - 0.5) * 0.5;
+        puff.userData.vy = 0.7 + Math.random() * 0.5;
+        puff.userData.vz = Math.cos(yaw) * 1.2 + (Math.random() - 0.5) * 0.5;
+        this.scene.add(puff);
+        parts.push(puff);
+      }
+    }
+    for (let i = parts.length - 1; i >= 0; i--) {
+      const p = parts[i];
+      p.userData.life -= dt;
+      p.position.x += p.userData.vx * dt;
+      p.position.y += p.userData.vy * dt;
+      p.position.z += p.userData.vz * dt;
+      p.scale.multiplyScalar(1 + dt * 1.8);
+      p.material.opacity = Math.max(0, p.userData.life * 1.2);
+      if (p.userData.life <= 0) {
+        this.scene.remove(p);
+        p.geometry.dispose();
+        p.material.dispose();
+        parts.splice(i, 1);
+      }
+    }
   }
 
   syncBoxes(list) {
@@ -1673,10 +1714,11 @@ export class GameWorld {
         const d = mesh.userData.t;
         if (!d) continue;
         if (d.kind === "vehicle" || mesh.userData.isVehicle) {
-          const gy = mesh.userData.groundY ?? 0.62;
+          const gy = mesh.userData.groundY ?? 0.64;
           mesh.position.lerp(new THREE.Vector3(d.x, gy, d.z), dk);
-          mesh.rotation.set(0, d.yaw ?? 0, 0);
+          mesh.rotation.set(0, (d.yaw ?? 0) + Math.PI, 0);
           mesh.visible = true;
+          this.updateVehicleExhaust(mesh, d, dt);
           continue;
         }
         mesh.position.lerp(new THREE.Vector3(d.x, d.y, d.z), dk);

@@ -674,13 +674,14 @@ export class GameRoom {
       const hw = (s.w || 4.2) * 0.48;
       const hh = 0.55;
       const hd = (s.d || 2.0) * 0.48;
-      const rideY = PLATFORM_TOP + hh + 0.08;
+      const rideY = PLATFORM_TOP + hh + 0.1;
       const body = new CANNON.Body({
-        mass: 0, // kinematic drive — never sinks into asphalt
-        type: CANNON.Body.KINEMATIC,
+        mass: 140,
         material: this.boxMat,
         shape: new CANNON.Box(new CANNON.Vec3(hw, hh, hd)),
         position: new CANNON.Vec3(s.x, rideY, s.z),
+        linearDamping: 0.35,
+        angularDamping: 0.99,
         fixedRotation: true,
       });
       const yaw = s.rotY || 0;
@@ -2061,25 +2062,25 @@ export class GameRoom {
     let speed = v.userData.speed || 0;
     const throttle = p.input.mz || 0;
     const steer = -(p.input.mx || 0);
-    const maxSpd = p.input.sprint ? 62 : 46;
-    if (throttle > 0.08) speed = this.approach(speed, maxSpd * throttle, 78 * dt);
-    else if (throttle < -0.08) speed = this.approach(speed, -maxSpd * 0.4 * Math.abs(throttle), 70 * dt);
-    else speed = this.approach(speed, 0, 36 * dt);
+    const maxFwd = p.input.sprint ? 58 : 44;
+    const maxRev = maxFwd * 0.5;
+    if (throttle > 0.08) speed = this.approach(speed, maxFwd * throttle, 70 * dt);
+    else if (throttle < -0.08) speed = this.approach(speed, -maxRev * Math.abs(throttle), 55 * dt);
+    else speed = this.approach(speed, 0, 40 * dt);
 
     if (Math.abs(speed) > 0.5) {
-      const turn = steer * dt * (2.8 * Math.min(1.25, Math.abs(speed) / 9)) * Math.sign(speed);
+      const turn = steer * dt * (2.6 * Math.min(1.2, Math.abs(speed) / 10)) * Math.sign(speed);
       v.userData.yaw = (v.userData.yaw || 0) + turn;
     }
     const yaw = v.userData.yaw || 0;
     const fx = -Math.sin(yaw);
     const fz = -Math.cos(yaw);
-    const rideY = v.userData.rideY ?? PLATFORM_TOP + 0.63;
-    v.position.x += fx * speed * dt;
-    v.position.z += fz * speed * dt;
-    v.position.y = rideY;
+    const rideY = v.userData.rideY ?? PLATFORM_TOP + 0.65;
     v.velocity.set(fx * speed, 0, fz * speed);
+    v.position.y = rideY;
     v.quaternion.setFromEuler(0, yaw, 0);
     v.userData.speed = speed;
+    v.wakeUp();
 
     p.body.position.set(v.position.x, rideY + 0.35, v.position.z);
     p.body.velocity.set(fx * speed, 0, fz * speed);
@@ -2088,9 +2089,10 @@ export class GameRoom {
 
   attachDriversToVehicles() {
     for (const v of this.vehicles || []) {
-      const rideY = v.userData.rideY ?? PLATFORM_TOP + 0.63;
+      const rideY = v.userData.rideY ?? PLATFORM_TOP + 0.65;
       v.position.y = rideY;
       v.velocity.y = 0;
+      v.quaternion.setFromEuler(0, v.userData.yaw || 0, 0);
     }
     for (const p of this.players.values()) {
       if (!p.alive || !p.vehicleId) continue;
@@ -2100,7 +2102,7 @@ export class GameRoom {
         p.body.collisionResponse = true;
         continue;
       }
-      const rideY = v.userData.rideY ?? PLATFORM_TOP + 0.63;
+      const rideY = v.userData.rideY ?? PLATFORM_TOP + 0.65;
       p.body.position.set(v.position.x, rideY + 0.35, v.position.z);
       p.body.velocity.set(v.velocity.x, 0, v.velocity.z);
     }
@@ -2110,16 +2112,14 @@ export class GameRoom {
     for (const v of this.vehicles || []) {
       if (v.userData.driverId) continue;
       let speed = v.userData.speed || 0;
-      speed = this.approach(speed, 0, 22 * dt);
+      speed = this.approach(speed, 0, 28 * dt);
       v.userData.speed = speed;
       const yaw = v.userData.yaw || 0;
       const fx = -Math.sin(yaw);
       const fz = -Math.cos(yaw);
-      const rideY = v.userData.rideY ?? PLATFORM_TOP + 0.63;
-      v.position.x += fx * speed * dt;
-      v.position.z += fz * speed * dt;
-      v.position.y = rideY;
+      const rideY = v.userData.rideY ?? PLATFORM_TOP + 0.65;
       v.velocity.set(fx * speed, 0, fz * speed);
+      v.position.y = rideY;
       v.quaternion.setFromEuler(0, yaw, 0);
     }
   }
