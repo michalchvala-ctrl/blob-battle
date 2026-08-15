@@ -330,11 +330,24 @@ export class GameWorld {
       const poly = s.poly;
       if (!poly?.length) continue;
 
+      // Geometry local to shard centroid so physics body pose maps 1:1
+      const cx =
+        s.cx ??
+        poly.reduce((a, p) => a + p.x, 0) / poly.length;
+      const cz =
+        s.cz ??
+        poly.reduce((a, p) => a + p.z, 0) / poly.length;
+      const loc = (p) => ({ x: p.x - cx, z: p.z - cz });
+
       const wedge = new THREE.Group();
       // Shape in XY with y = −z so rotateX(−π/2) lands on world XZ without mirror
       const shape = new THREE.Shape();
-      shape.moveTo(poly[0].x, -poly[0].z);
-      for (let i = 1; i < poly.length; i++) shape.lineTo(poly[i].x, -poly[i].z);
+      const p0 = loc(poly[0]);
+      shape.moveTo(p0.x, -p0.z);
+      for (let i = 1; i < poly.length; i++) {
+        const p = loc(poly[i]);
+        shape.lineTo(p.x, -p.z);
+      }
       shape.closePath();
 
       const geo = new THREE.ExtrudeGeometry(shape, {
@@ -343,20 +356,18 @@ export class GameWorld {
         steps: 1,
         curveSegments: 1,
       });
-      // Extrude +Z → after rotateX(−π/2) becomes −Y; lift so slab is centered on y=0
+      // Extrude +Z → after rotateX(−π/2) spans y=0..H; shift down so slab is ±H/2 (matches physics)
       geo.rotateX(-Math.PI / 2);
-      geo.translate(0, H * 0.5, 0);
+      geo.translate(0, -H * 0.5, 0);
 
       const body = new THREE.Mesh(geo, sideMat);
       body.castShadow = true;
       body.receiveShadow = true;
 
-      const cx = poly.reduce((a, p) => a + p.x, 0) / poly.length;
-      const cz = poly.reduce((a, p) => a + p.z, 0) / poly.length;
-      const inset = (p) => ({
-        x: cx + (p.x - cx) * 0.9,
-        z: cz + (p.z - cz) * 0.9,
-      });
+      const inset = (p) => {
+        const L = loc(p);
+        return { x: L.x * 0.9, z: L.z * 0.9 };
+      };
       const icingShape = new THREE.Shape();
       const ip0 = inset(poly[0]);
       icingShape.moveTo(ip0.x, -ip0.z);
@@ -383,8 +394,8 @@ export class GameWorld {
       topCap.receiveShadow = true;
 
       for (let i = 0; i < poly.length; i++) {
-        const a = poly[i];
-        const b = poly[(i + 1) % poly.length];
+        const a = loc(poly[i]);
+        const b = loc(poly[(i + 1) % poly.length]);
         const dx = b.x - a.x;
         const dz = b.z - a.z;
         const len = Math.hypot(dx, dz);
@@ -396,9 +407,9 @@ export class GameWorld {
       }
 
       wedge.add(body, topCap, icing);
-      wedge.position.set(s.x || 0, s.y || 0, s.z || 0);
+      wedge.position.set(s.x ?? cx, s.y ?? 0, s.z ?? cz);
       if (s.qx != null) wedge.quaternion.set(s.qx, s.qy, s.qz, s.qw);
-      wedge.userData = { id: s.id, attached: s.attached !== false, t: s };
+      wedge.userData = { id: s.id, attached: s.attached !== false, t: s, cx, cz };
       this.pad.add(wedge);
       this.shardMeshes.set(s.id, wedge);
     }
@@ -428,8 +439,11 @@ export class GameWorld {
       if (!s.attached) {
         // Falling piece — follow physics pose (interpolated in update)
       } else {
-        mesh.position.set(0, 0, 0);
-        mesh.quaternion.identity();
+        const cx = s.cx ?? mesh.userData.cx ?? 0;
+        const cz = s.cz ?? mesh.userData.cz ?? 0;
+        mesh.position.set(s.x ?? cx, s.y ?? 0, s.z ?? cz);
+        if (s.qx != null) mesh.quaternion.set(s.qx, s.qy, s.qz, s.qw);
+        else mesh.quaternion.identity();
       }
     }
     for (const [id, mesh] of this.shardMeshes) {
@@ -757,8 +771,11 @@ export class GameWorld {
         const s = mesh.userData.t;
         if (!s) continue;
         if (s.attached) {
-          mesh.position.set(0, 0, 0);
-          mesh.quaternion.identity();
+          const cx = s.cx ?? mesh.userData.cx ?? 0;
+          const cz = s.cz ?? mesh.userData.cz ?? 0;
+          mesh.position.set(s.x ?? cx, s.y ?? 0, s.z ?? cz);
+          if (s.qx != null) mesh.quaternion.set(s.qx, s.qy, s.qz, s.qw);
+          else mesh.quaternion.identity();
           mesh.visible = true;
         } else {
           mesh.position.lerp(new THREE.Vector3(s.x, s.y, s.z), sk);

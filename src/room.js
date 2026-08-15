@@ -103,16 +103,17 @@ function annularPoly2d(a0, a1, rInner, rOuter, arcSegs = 5) {
  * Irregular glass layout: 2–3 concentric rings, each with its own random
  * sector angles (seams kink between rings — not equal pizza wedges).
  * ring 0 = outermost (breaks first).
+ * Fewer, larger edge pieces so the hill shrinks faster.
  */
 function generateGlassShatter(radius) {
-  const nRings = Math.random() < 0.45 ? 2 : 3;
+  const nRings = Math.random() < 0.62 ? 2 : 3;
   const fracs = [];
   if (nRings === 2) {
-    fracs.push(0.48 + Math.random() * 0.14);
+    fracs.push(0.42 + Math.random() * 0.12);
     fracs.push(1);
   } else {
-    fracs.push(0.32 + Math.random() * 0.1);
-    fracs.push(0.62 + Math.random() * 0.1);
+    fracs.push(0.28 + Math.random() * 0.08);
+    fracs.push(0.58 + Math.random() * 0.1);
     fracs.push(1);
   }
 
@@ -123,11 +124,11 @@ function generateGlassShatter(radius) {
     const rInner = ring === 0 ? 0 : radius * fracs[ring - 1];
     const rOuter = radius * fracs[ring];
     let nSec;
-    if (ringFromOuter === 0) nSec = 7 + ((Math.random() * 4) | 0);
-    else if (ringFromOuter === 1) nSec = 5 + ((Math.random() * 3) | 0);
-    else nSec = 3 + ((Math.random() * 3) | 0);
+    if (ringFromOuter === 0) nSec = 4 + ((Math.random() * 3) | 0); // 4–6 large rim pieces
+    else if (ringFromOuter === 1) nSec = 3 + ((Math.random() * 2) | 0); // 3–4
+    else nSec = 2 + ((Math.random() * 2) | 0); // 2–3
 
-    const cuts = randomSectorCuts(nSec, ringFromOuter === 0 ? 0.05 : 0.07);
+    const cuts = randomSectorCuts(nSec, ringFromOuter === 0 ? 0.08 : 0.1);
     for (let s = 0; s < nSec; s++) {
       let a0 = cuts[s];
       let a1 = cuts[s + 1];
@@ -174,7 +175,7 @@ function makeTrianglePrism(radius, height) {
   return new CANNON.ConvexPolyhedron({ vertices, faces });
 }
 
-/** Oriented box under an annular shard — stable physics for irregular glass pieces. */
+/** Oriented box under an annular shard — local to shard centroid (body at cx,cz). */
 function makeShardBox(def, height) {
   const span = Math.abs(def.a1 - def.a0);
   const mid = (def.a0 + def.a1) * 0.5;
@@ -186,7 +187,9 @@ function makeShardBox(def, height) {
   const shape = new CANNON.Box(
     new CANNON.Vec3(tangential * 0.5, height * 0.5, radial * 0.5),
   );
-  const offset = new CANNON.Vec3(Math.sin(mid) * rMid, 0, Math.cos(mid) * rMid);
+  const wx = Math.sin(mid) * rMid;
+  const wz = Math.cos(mid) * rMid;
+  const offset = new CANNON.Vec3(wx - def.cx, 0, wz - def.cz);
   const quat = new CANNON.Quaternion();
   quat.setFromAxisAngle(new CANNON.Vec3(0, 1, 0), mid);
   return { shape, offset, quat };
@@ -325,7 +328,7 @@ export class GameRoom {
         mass: 7.5,
         material: this.boxMat,
         shape: new CANNON.Box(new CANNON.Vec3(0.7, 0.85, 0.7)),
-        position: new CANNON.Vec3(x, 1.35, z),
+        position: new CANNON.Vec3(x, PLATFORM_TOP + 0.85, z),
         linearDamping: 0.42,
         angularDamping: 0.55,
       });
@@ -348,13 +351,13 @@ export class GameRoom {
     this.shards = [];
     const layout = generateGlassShatter(radius);
     for (const def of layout) {
-      // Visual poly is irregular; physics uses oriented box under the piece
+      // Body at shard centroid so detach rotates around the piece, not disk origin
       const { shape, offset, quat } = makeShardBox(def, PLATFORM_HEIGHT);
       const body = new CANNON.Body({
         mass: 0,
         type: CANNON.Body.STATIC,
         material: this.groundMat,
-        position: new CANNON.Vec3(0, 0, 0),
+        position: new CANNON.Vec3(def.cx, 0, def.cz),
       });
       body.addShape(shape, offset, quat);
       body.userData = { shardId: def.id };
@@ -482,8 +485,8 @@ export class GameRoom {
   }
 
   /**
-   * Hill only: detach one outer-ring glass shard — tips then falls into the void.
-   * Break order: outermost attached ring first, random among that ring.
+   * Hill only: detach one whole outer-ring glass shard (no smash into bits).
+   * Settle down a crack gap, then slide flat radially into the void.
    */
   breakOffShard() {
     const attached = this.shards.filter((s) => s.attached);
@@ -498,22 +501,24 @@ export class GameRoom {
       Math.max(0.08, Math.abs(shard.a1 - shard.a0));
     body.type = CANNON.Body.DYNAMIC;
     body.mass = Math.max(18, Math.min(90, area * 2.8));
-    body.linearDamping = 0.04;
-    body.angularDamping = 0.12;
+    body.linearDamping = 0.06;
+    body.angularDamping = 0.92;
     body.updateMassProperties();
     body.wakeUp();
-    // Mostly downward into the void — tiny sideways drift + slight tip
-    body.velocity.set(
-      (Math.random() - 0.5) * 0.55,
-      -0.8 - Math.random() * 1.6,
-      (Math.random() - 0.5) * 0.55,
-    );
-    const tip = 0.7 + Math.random() * 1.1;
+    // Keep flat — no tumble into a vertical wall
+    body.quaternion.set(0, 0, 0, 1);
     body.angularVelocity.set(
-      (Math.random() - 0.5) * tip,
-      (Math.random() - 0.5) * 0.25,
-      (Math.random() - 0.5) * tip,
+      (Math.random() - 0.5) * 0.06,
+      (Math.random() - 0.5) * 0.1,
+      (Math.random() - 0.5) * 0.06,
     );
+    // Crack gap: drop a few pixels, then slide outward on XZ
+    body.position.y = -0.045;
+    const len = Math.hypot(body.position.x, body.position.z) || 1;
+    const ox = body.position.x / len;
+    const oz = body.position.z / len;
+    const out = 3.2 + Math.random() * 1.6;
+    body.velocity.set(ox * out, -0.45 - Math.random() * 0.25, oz * out);
     this.events.push({ type: "shard", id: shard.id });
   }
 
@@ -705,11 +710,15 @@ export class GameRoom {
     // Hill glass shards only work on the circle disk; other modes use selected arena.
     if (this.mode === "hill") {
       let layout = resolveArenaLayout("circle");
-      const r = 12.5;
+      const r = 8.5;
       layout = {
         ...layout,
         pieces: [{ ...layout.pieces[0], r }],
         radius: r,
+        spawns: layout.spawns.map((s) => ({
+          x: s.x * (r / 13),
+          z: s.z * (r / 13),
+        })),
       };
       this.applyLayout(layout, { playing: true });
       this.nextCrackT = 4 + Math.random() * 2.5;
@@ -1198,6 +1207,8 @@ export class GameRoom {
         rOuter: s.rOuter,
         radius: s.radius,
         poly: s.poly,
+        cx: s.cx,
+        cz: s.cz,
         attached: s.attached,
         x: b.position.x,
         y: b.position.y,
