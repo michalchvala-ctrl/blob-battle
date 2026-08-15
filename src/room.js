@@ -534,24 +534,21 @@ export class GameRoom {
       x = Math.cos(ang) * r;
       z = Math.sin(ang) * r;
     }
-    const y = 16 + Math.random() * 8;
-    const hx = 0.52;
-    const hy = 0.42;
-    const hz = 0.78;
+    const y = 14 + Math.random() * 6;
+    // Standing goat collision (body + legs)
+    const hx = 0.45;
+    const hy = 0.72;
+    const hz = 0.85;
     const body = new CANNON.Body({
-      mass: 32,
+      mass: 28,
       material: this.goatMat,
       shape: new CANNON.Box(new CANNON.Vec3(hx, hy, hz)),
       position: new CANNON.Vec3(x, y, z),
-      linearDamping: 0.04,
-      angularDamping: 0.22,
+      linearDamping: 0.18,
+      angularDamping: 0.95,
+      fixedRotation: true,
     });
-    body.velocity.set((Math.random() - 0.5) * 4, -4 - Math.random() * 3, (Math.random() - 0.5) * 4);
-    body.angularVelocity.set(
-      (Math.random() - 0.5) * 3,
-      (Math.random() - 0.5) * 5,
-      (Math.random() - 0.5) * 3,
-    );
+    body.velocity.set((Math.random() - 0.5) * 2, -3 - Math.random() * 2, (Math.random() - 0.5) * 2);
     body.userData = {
       id: this.debrisNextId++,
       kind: "goat",
@@ -559,14 +556,15 @@ export class GameRoom {
       sx: hx * 2,
       sy: hy * 2,
       sz: hz * 2,
-      chargeT: 0.4 + Math.random() * 0.8,
+      yaw: Math.random() * Math.PI * 2,
+      chargeT: 0.6 + Math.random() * 1.2,
     };
     this.world.addBody(body);
     this.goats.push(body);
     this.events.push({ type: "goat", id: body.userData.id });
   }
 
-  /** Steer goats: charge nearest player, otherwise wander. */
+  /** Steer goats: slow trot toward nearest player / wander. */
   steerGoats(dt) {
     if (!this.goats.length) return;
     for (const g of this.goats) {
@@ -586,32 +584,30 @@ export class GameRoom {
           tz = dz;
         }
       }
-      if (tx != null && best < 28) {
+      let wishX = 0;
+      let wishZ = 0;
+      if (tx != null && best < 32) {
         const inv = best > 0.15 ? 1 / best : 0;
-        const nx = tx * inv;
-        const nz = tz * inv;
-        const accel = best < 6 ? 28 : 18;
-        g.velocity.x += nx * accel * dt;
-        g.velocity.z += nz * accel * dt;
-        if (ud.chargeT <= 0 && best < 10 && g.position.y < 4) {
-          g.velocity.x += nx * (7 + Math.random() * 4);
-          g.velocity.z += nz * (7 + Math.random() * 4);
-          g.velocity.y += 2.2 + Math.random() * 1.5;
-          ud.chargeT = 1.1 + Math.random() * 1.4;
-        }
+        wishX = tx * inv;
+        wishZ = tz * inv;
       } else if (ud.chargeT <= 0) {
         const ang = Math.random() * Math.PI * 2;
-        g.velocity.x += Math.cos(ang) * (5 + Math.random() * 4);
-        g.velocity.z += Math.sin(ang) * (5 + Math.random() * 4);
-        ud.chargeT = 0.8 + Math.random() * 1.2;
+        wishX = Math.cos(ang);
+        wishZ = Math.sin(ang);
+        ud.chargeT = 1.5 + Math.random() * 2;
+      } else {
+        wishX = -Math.sin(ud.yaw || 0);
+        wishZ = -Math.cos(ud.yaw || 0);
       }
-      const hSp = Math.hypot(g.velocity.x, g.velocity.z);
-      const maxH = 16;
-      if (hSp > maxH) {
-        const s = maxH / hSp;
-        g.velocity.x *= s;
-        g.velocity.z *= s;
+      // slow run — trot, not rocket
+      const walkSpeed = 3.6;
+      const accel = 10;
+      g.velocity.x = this.approach(g.velocity.x, wishX * walkSpeed, accel * dt);
+      g.velocity.z = this.approach(g.velocity.z, wishZ * walkSpeed, accel * dt);
+      if (Math.hypot(wishX, wishZ) > 0.05) {
+        ud.yaw = Math.atan2(-wishX, -wishZ);
       }
+      g.quaternion.setFromEuler(0, ud.yaw || 0, 0);
       g.wakeUp();
     }
   }
@@ -1443,6 +1439,10 @@ export class GameRoom {
       qy: b.quaternion.y,
       qz: b.quaternion.z,
       qw: b.quaternion.w,
+      yaw: b.userData?.yaw ?? 0,
+      vx: b.velocity.x,
+      vy: b.velocity.y,
+      vz: b.velocity.z,
     }));
     const ev = this.events;
     this.events = [];

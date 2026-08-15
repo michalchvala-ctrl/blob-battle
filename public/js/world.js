@@ -455,68 +455,73 @@ export class GameWorld {
   }
 
   makeGoatMesh(d) {
+    // Boxy LEGO-style goat with animated legs
     const fur = d.color || "#c4a574";
-    const dark = "#5c4030";
-    const horn = "#f2e6d8";
+    const dark = "#4a3428";
+    const cream = "#efe2c8";
     const g = new THREE.Group();
+    const legs = [];
 
-    const body = new THREE.Mesh(new THREE.BoxGeometry(0.95, 0.72, 1.35), toon(fur));
-    body.position.set(0, 0.08, 0);
-    body.castShadow = true;
-    g.add(body);
+    const addBox = (w, h, dpth, color, x, y, z, parent = g) => {
+      const m = new THREE.Mesh(new THREE.BoxGeometry(w, h, dpth), toon(color));
+      m.position.set(x, y, z);
+      m.castShadow = true;
+      m.receiveShadow = true;
+      parent.add(m);
+      return m;
+    };
 
-    const belly = new THREE.Mesh(new THREE.SphereGeometry(0.42, 12, 10), toon("#d4b896"));
-    belly.scale.set(1.15, 0.85, 1.35);
-    belly.position.set(0, -0.05, 0.05);
-    g.add(belly);
+    // torso
+    addBox(0.9, 0.7, 1.35, fur, 0, 0.35, 0);
+    addBox(0.75, 0.35, 1.0, "#d2b48c", 0, 0.05, 0.05);
+    // neck + head (facing +Z)
+    addBox(0.4, 0.45, 0.35, fur, 0, 0.7, 0.7);
+    addBox(0.55, 0.48, 0.55, fur, 0, 0.85, 1.0);
+    addBox(0.35, 0.22, 0.32, cream, 0, 0.7, 1.28);
+    // eyes
+    addBox(0.1, 0.1, 0.08, "#1a1020", -0.16, 0.95, 1.26);
+    addBox(0.1, 0.1, 0.08, "#1a1020", 0.16, 0.95, 1.26);
+    // ears
+    addBox(0.14, 0.22, 0.08, fur, -0.36, 1.05, 0.95);
+    addBox(0.14, 0.22, 0.08, fur, 0.36, 1.05, 0.95);
+    // horns (boxes)
+    const hornL = addBox(0.1, 0.42, 0.1, cream, -0.18, 1.25, 0.9);
+    hornL.rotation.z = 0.35;
+    hornL.rotation.x = -0.25;
+    const hornR = addBox(0.1, 0.42, 0.1, cream, 0.18, 1.25, 0.9);
+    hornR.rotation.z = -0.35;
+    hornR.rotation.x = -0.25;
+    // tail
+    addBox(0.12, 0.12, 0.28, dark, 0, 0.45, -0.78);
 
-    const head = new THREE.Mesh(new THREE.BoxGeometry(0.55, 0.48, 0.58), toon(fur));
-    head.position.set(0, 0.28, 0.78);
-    head.castShadow = true;
-    g.add(head);
-
-    const snout = new THREE.Mesh(new THREE.BoxGeometry(0.32, 0.22, 0.28), toon("#e8d4b8"));
-    snout.position.set(0, 0.12, 1.12);
-    g.add(snout);
-
-    for (const sx of [-0.16, 0.16]) {
-      const hornM = new THREE.Mesh(new THREE.ConeGeometry(0.07, 0.38, 6), toon(horn));
-      hornM.position.set(sx, 0.58, 0.72);
-      hornM.rotation.z = sx > 0 ? -0.35 : 0.35;
-      hornM.rotation.x = -0.45;
-      hornM.castShadow = true;
-      g.add(hornM);
-    }
-
-    const earGeo = new THREE.BoxGeometry(0.14, 0.22, 0.06);
-    for (const sx of [-0.32, 0.32]) {
-      const ear = new THREE.Mesh(earGeo, toon(fur));
-      ear.position.set(sx, 0.42, 0.7);
-      ear.rotation.z = sx > 0 ? -0.5 : 0.5;
-      g.add(ear);
-    }
-
-    const legGeo = new THREE.CylinderGeometry(0.09, 0.07, 0.55, 6);
-    const legMat = toon(dark);
-    const legs = [
-      [-0.28, -0.42, 0.38],
-      [0.28, -0.42, 0.38],
-      [-0.28, -0.42, -0.42],
-      [0.28, -0.42, -0.42],
+    // legs as groups so we can swing them
+    const legSpots = [
+      [-0.28, 0.38],
+      [0.28, 0.38],
+      [-0.28, -0.4],
+      [0.28, -0.4],
     ];
-    for (const [lx, ly, lz] of legs) {
-      const leg = new THREE.Mesh(legGeo, legMat);
-      leg.position.set(lx, ly, lz);
-      leg.castShadow = true;
+    for (const [lx, lz] of legSpots) {
+      const leg = new THREE.Group();
+      leg.position.set(lx, 0.05, lz);
+      const thigh = new THREE.Mesh(new THREE.BoxGeometry(0.18, 0.42, 0.18), toon(fur));
+      thigh.position.y = -0.2;
+      thigh.castShadow = true;
+      const shin = new THREE.Mesh(new THREE.BoxGeometry(0.14, 0.38, 0.14), toon(dark));
+      shin.position.y = -0.52;
+      shin.castShadow = true;
+      const hoof = new THREE.Mesh(new THREE.BoxGeometry(0.18, 0.1, 0.22), toon("#2a1c14"));
+      hoof.position.y = -0.74;
+      hoof.castShadow = true;
+      leg.add(thigh, shin, hoof);
       g.add(leg);
+      legs.push(leg);
     }
 
-    const tail = new THREE.Mesh(new THREE.BoxGeometry(0.1, 0.1, 0.28), toon(dark));
-    tail.position.set(0, 0.15, -0.78);
-    g.add(tail);
-
+    g.userData.legs = legs;
+    g.userData.isGoat = true;
     g.position.set(d.x, d.y, d.z);
-    g.quaternion.set(d.qx, d.qy, d.qz, d.qw);
+    g.rotation.y = d.yaw ?? 0;
     return g;
   }
 
@@ -831,7 +836,18 @@ export class GameWorld {
         const d = mesh.userData.t;
         if (!d) continue;
         mesh.position.lerp(new THREE.Vector3(d.x, d.y, d.z), dk);
-        mesh.quaternion.slerp(new THREE.Quaternion(d.qx, d.qy, d.qz, d.qw), dk);
+        if (mesh.userData.isGoat) {
+          const yaw = (d.yaw ?? 0) + Math.PI;
+          mesh.rotation.set(0, yaw, 0);
+          const spd = Math.hypot(d.vx || 0, d.vz || 0);
+          const legs = mesh.userData.legs || [];
+          const swing = spd > 0.4 ? Math.sin(t * 9) * Math.min(0.85, spd * 0.22) : 0;
+          legs.forEach((leg, i) => {
+            leg.rotation.x = i % 2 === 0 ? swing : -swing;
+          });
+        } else {
+          mesh.quaternion.slerp(new THREE.Quaternion(d.qx, d.qy, d.qz, d.qw), dk);
+        }
         mesh.visible = d.y > -20;
       }
     }
