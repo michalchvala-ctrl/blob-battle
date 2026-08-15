@@ -1793,7 +1793,7 @@ export class GameRoom {
         } else if ((p.ammo || 0) > 0) {
           p.ammo -= 1;
           this.doShoot(p);
-          p.shootCd = w === "sniper" ? 0.85 : 0.285;
+          p.shootCd = w === "sniper" ? 0.55 : 0.18;
           p.shootFlash = 0.12;
         } else {
           this.events.push({ type: "empty", id: p.id });
@@ -1977,13 +1977,13 @@ export class GameRoom {
     const fx = -Math.sin(yaw) * cosP;
     const fy = sinP;
     const fz = -Math.cos(yaw) * cosP;
-    // ~50% slower than the previous ~180 u/s hitscan-feel beam; sniper is much faster
+    // First-version feel: fast projectiles (~hitscan); sniper even quicker
     const sniper = p.weapon === "sniper";
-    const speed = sniper ? 240 : 90;
+    const speed = sniper ? 320 : 180;
     const range = sniper
       ? Math.max(160, Math.min(320, this.platformRadius * 1.4))
       : Math.max(90, Math.min(240, this.platformRadius * 1.15));
-    const dmg = sniper ? 55 : 20;
+    const dmg = sniper ? 40 : 20; // sniper = 2× pistol
     this.bullets.push({
       id: this.bulletNextId++,
       ownerId: p.id,
