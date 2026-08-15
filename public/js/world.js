@@ -162,7 +162,9 @@ export class GameWorld {
     sun.shadow.camera.right = 30;
     sun.shadow.camera.top = 30;
     sun.shadow.camera.bottom = -30;
-    this.scene.add(hemi, sun, new THREE.AmbientLight("#ff9ad8", 0.18));
+    sun.target.position.set(0, 0, 0);
+    this.sun = sun;
+    this.scene.add(hemi, sun, sun.target, new THREE.AmbientLight("#ff9ad8", 0.18));
 
     this.arena = new THREE.Group();
     this.pad = new THREE.Group();
@@ -221,6 +223,7 @@ export class GameWorld {
   buildArena(radius, mode = "sumo", shards = null, pieces = null, layoutKey = "") {
     this.baseRadius = radius;
     this.platformRadius = radius;
+    this.fitViewDistance();
     this.hillMode = mode === "hill";
     this.layoutKey = layoutKey || "";
     this.clearPad();
@@ -268,6 +271,7 @@ export class GameWorld {
     this.platformRadius = maxR;
     this.baseRadius = maxR;
     this.platform = this.pad;
+    this.fitViewDistance();
   }
 
   makePadPiece(p) {
@@ -314,8 +318,9 @@ export class GameWorld {
       }
       g.add(top, icing);
     } else {
+      const huge = Math.max(p.w || 0, p.d || 0) > 80;
       const top = new THREE.Mesh(new THREE.BoxGeometry(p.w, h, p.d), pink);
-      top.castShadow = true;
+      top.castShadow = !huge;
       top.receiveShadow = true;
       const icing = new THREE.Mesh(
         new THREE.BoxGeometry(Math.max(0.2, p.w - 0.55), 0.1, Math.max(0.2, p.d - 0.55)),
@@ -323,15 +328,18 @@ export class GameWorld {
       );
       icing.position.y = h * 0.5;
       icing.receiveShadow = true;
-      const rimW = new THREE.Mesh(new THREE.BoxGeometry(p.w + 0.15, 0.18, 0.28), gold);
-      rimW.position.set(0, h * 0.48, p.d * 0.5);
-      const rimW2 = rimW.clone();
-      rimW2.position.z = -p.d * 0.5;
-      const rimD = new THREE.Mesh(new THREE.BoxGeometry(0.28, 0.18, p.d + 0.15), gold);
-      rimD.position.set(p.w * 0.5, h * 0.48, 0);
-      const rimD2 = rimD.clone();
-      rimD2.position.x = -p.w * 0.5;
-      g.add(top, icing, rimW, rimW2, rimD, rimD2);
+      g.add(top, icing);
+      if (!huge) {
+        const rimW = new THREE.Mesh(new THREE.BoxGeometry(p.w + 0.15, 0.18, 0.28), gold);
+        rimW.position.set(0, h * 0.48, p.d * 0.5);
+        const rimW2 = rimW.clone();
+        rimW2.position.z = -p.d * 0.5;
+        const rimD = new THREE.Mesh(new THREE.BoxGeometry(0.28, 0.18, p.d + 0.15), gold);
+        rimD.position.set(p.w * 0.5, h * 0.48, 0);
+        const rimD2 = rimD.clone();
+        rimD2.position.x = -p.w * 0.5;
+        g.add(rimW, rimW2, rimD, rimD2);
+      }
     }
 
     g.position.set(p.x, 0, p.z);
@@ -684,11 +692,24 @@ export class GameWorld {
     if (!radius || !this.baseRadius) return;
     if (this.hillMode) {
       this.platformRadius = radius;
+      this.fitViewDistance();
       return;
     }
     this.platformRadius = radius;
     const s = radius / this.baseRadius;
     this.pad.scale.set(s, 1, s);
+    this.fitViewDistance();
+  }
+
+  fitViewDistance() {
+    const r = Math.max(this.platformRadius || 13, 8);
+    const far = Math.max(220, r * 3.5 + 100);
+    this.camera.far = far;
+    this.camera.updateProjectionMatrix();
+    if (this.scene.fog) {
+      this.scene.fog.near = Math.min(90, Math.max(28, r * 0.22));
+      this.scene.fog.far = Math.min(far * 0.9, Math.max(120, r * 2.6 + 50));
+    }
   }
 
   /** Rebuild when layout changes; hill uses shards; otherwise solid pieces/pad. */
@@ -854,7 +875,8 @@ export class GameWorld {
   zoom(deltaY) {
     const step = Math.sign(deltaY) * 1.15;
     if (this.spectating) {
-      this.specDist = THREE.MathUtils.clamp(this.specDist + step, 12, 56);
+      const maxD = Math.max(56, this.platformRadius * 0.55 + 20);
+      this.specDist = THREE.MathUtils.clamp(this.specDist + step * 2.2, 12, maxD);
     } else {
       this.camDist = THREE.MathUtils.clamp(this.camDist + step, 3.2, 18);
     }
@@ -1123,6 +1145,22 @@ export class GameWorld {
       this.camera.position.lerp(desired, 0.88);
     }
     this.camera.lookAt(pos.x, pos.y + 0.95, pos.z);
+    this.updateSunFollow(pos.x, pos.z);
+  }
+
+  updateSunFollow(x, z) {
+    if (!this.sun || (this.platformRadius || 0) < 40) return;
+    this.sun.target.position.set(x, 0, z);
+    this.sun.position.set(x + 42, 58, z + 28);
+    this.sun.target.updateMatrixWorld();
+    const sc = this.sun.shadow.camera;
+    sc.left = -48;
+    sc.right = 48;
+    sc.top = 48;
+    sc.bottom = -48;
+    sc.near = 2;
+    sc.far = 140;
+    sc.updateProjectionMatrix();
   }
 
   orbit(target, dist, height) {

@@ -363,6 +363,18 @@ export class GameRoom {
       [-2.2, 4.5, "#ff9e00"],
       [3.8, -5.1, "#80ffdb"],
     ];
+    // On huge guns maps, scatter a few more props across the pad
+    if (this.platformRadius > 40) {
+      const R = this.platformRadius * 0.55;
+      const extra = [
+        ["#5ce1ff", "#d6ff4a", "#c77dff", "#ff9e00", "#80ffdb", "#ff7ad9"],
+      ][0];
+      for (let i = 0; i < 12; i++) {
+        const a = (i / 12) * Math.PI * 2 + 0.4;
+        const r = R * (0.25 + (i % 3) * 0.22);
+        spots.push([Math.cos(a) * r, Math.sin(a) * r, extra[i % extra.length]]);
+      }
+    }
     for (const [x, z, color] of spots) {
       if (!this.overAttachedPlatform(x, z, -0.4)) continue;
       if (useHillShards && !this.overAttachedPlatform(x, z)) continue;
@@ -377,7 +389,7 @@ export class GameRoom {
       body.userData = { id: this.boxNextId++, color, spawnX: x, spawnZ: z };
       this.world.addBody(body);
       this.boxes.push(body);
-      if (this.boxes.length >= 3) break;
+      if (this.boxes.length >= (this.platformRadius > 40 ? 12 : 3)) break;
     }
   }
 
@@ -1286,7 +1298,7 @@ export class GameRoom {
     const ox = origin.x;
     const oy = origin.y + 0.35;
     const oz = origin.z;
-    const range = 90;
+    const range = Math.max(90, Math.min(240, this.platformRadius * 1.15));
     let hit = null;
     let hitT = range;
     for (const o of this.players.values()) {
