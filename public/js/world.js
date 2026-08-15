@@ -1314,64 +1314,87 @@ export class GameWorld {
 
   makeVehicleMesh(d) {
     const g = new THREE.Group();
-    const modelId = d.model || CAR_MODELS[0];
-    const proto = this.gltfCache.get(`car:${modelId}`);
-    const bodyColor = d.color || "#d64545";
-    const length = 4.2;
-    const width = 2.05;
-    const height = 1.55;
+    const col = d.color || "#d64545";
     const PLATFORM_TOP = 0.575;
-    if (proto) {
-      const model = proto.clone(true);
-      this.fitGltfToBox(model, width, height, length, { uniform: true });
-      this.paintVehicleModel(model, bodyColor);
-      g.add(model);
-    } else {
-      const body = new THREE.Mesh(
-        new THREE.BoxGeometry(width, height * 0.5, length),
-        carBodyMat(bodyColor),
-      );
-      body.position.y = height * 0.28;
-      g.add(body);
+    const paint = carBodyMat(col);
+    const dark = carBodyMat("#1a1a1a", { roughness: 0.92, metalness: 0.05 });
+    const glassMat = carBodyMat("#1e3a4a", { roughness: 0.25, metalness: 0.55 });
+    const chrome = carBodyMat("#c5ccd4", { roughness: 0.35, metalness: 0.65 });
+
+    // Solid closed body — no hollow GLB shell (those looked “transparent”)
+    const chassis = new THREE.Mesh(new THREE.BoxGeometry(2.05, 0.5, 4.15), paint);
+    chassis.position.y = 0.52;
+    const cabin = new THREE.Mesh(new THREE.BoxGeometry(1.75, 0.58, 2.05), paint);
+    cabin.position.set(0, 0.98, -0.2);
+    const hood = new THREE.Mesh(new THREE.BoxGeometry(1.95, 0.16, 1.1), paint);
+    hood.position.set(0, 0.78, 1.25);
+    const trunk = new THREE.Mesh(new THREE.BoxGeometry(1.95, 0.2, 0.7), paint);
+    trunk.position.set(0, 0.78, -1.55);
+
+    // Opaque “glass” panels (dark tint, not see-through)
+    const winF = new THREE.Mesh(new THREE.BoxGeometry(1.55, 0.38, 0.06), glassMat);
+    winF.position.set(0, 1.05, 0.82);
+    winF.rotation.x = -0.25;
+    const winB = new THREE.Mesh(new THREE.BoxGeometry(1.55, 0.36, 0.06), glassMat);
+    winB.position.set(0, 1.05, -1.18);
+    winB.rotation.x = 0.2;
+    const winL = new THREE.Mesh(new THREE.BoxGeometry(0.06, 0.34, 1.5), glassMat);
+    winL.position.set(-0.88, 1.02, -0.15);
+    const winR = winL.clone();
+    winR.position.x = 0.88;
+
+    const bumperF = new THREE.Mesh(new THREE.BoxGeometry(2.1, 0.22, 0.28), chrome);
+    bumperF.position.set(0, 0.38, 2.05);
+    const bumperB = new THREE.Mesh(new THREE.BoxGeometry(2.1, 0.22, 0.28), chrome);
+    bumperB.position.set(0, 0.38, -2.05);
+
+    function wheel(x, z) {
+      const w = new THREE.Mesh(new THREE.CylinderGeometry(0.38, 0.38, 0.28, 12), dark);
+      w.rotation.z = Math.PI / 2;
+      w.position.set(x, 0.38, z);
+      return w;
     }
+
+    g.add(
+      chassis,
+      cabin,
+      hood,
+      trunk,
+      winF,
+      winB,
+      winL,
+      winR,
+      bumperF,
+      bumperB,
+      wheel(-0.95, 1.25),
+      wheel(0.95, 1.25),
+      wheel(-0.95, -1.25),
+      wheel(0.95, -1.25),
+    );
+    g.traverse((o) => {
+      if (o.isMesh) {
+        o.castShadow = true;
+        o.receiveShadow = true;
+        if (o.material) {
+          o.material.transparent = false;
+          o.material.opacity = 1;
+          o.material.depthWrite = true;
+        }
+      }
+    });
+
     g.userData.isVehicle = true;
-    g.userData.bodyColor = bodyColor;
-    // Lift so wheels sit on asphalt, not through it
-    g.userData.groundY = PLATFORM_TOP + 0.14;
+    g.userData.paintVer = 3;
+    g.userData.bodyColor = col;
+    g.userData.groundY = PLATFORM_TOP + 0.02;
     g.userData.exhaust = [];
     g.position.set(d.x, g.userData.groundY, d.z);
     g.rotation.y = (d.yaw ?? 0) + Math.PI;
     return g;
   }
 
-  paintVehicleModel(model, bodyColor) {
-    model.traverse((o) => {
-      if (!o.isMesh) return;
-      if (o.geometry?.attributes?.color) o.geometry.deleteAttribute("color");
-      // Break shared materials from GLTF clone
-      const n = `${o.name || ""} ${o.material?.name || ""}`.toLowerCase();
-      const isWheel = /wheel|tire|cylinder/.test(n);
-      const isGlass = /glass|window|windshield|wind/.test(n);
-      const isLight = /light|lamp|emissive/.test(n);
-      if (isGlass) {
-        o.material = new THREE.MeshStandardMaterial({
-          color: "#6eb8e8",
-          transparent: true,
-          opacity: 0.35,
-          roughness: 0.15,
-          metalness: 0.4,
-          depthWrite: false,
-        });
-      } else if (isWheel) {
-        o.material = carBodyMat("#1a1a1a", { roughness: 0.9, metalness: 0.05 });
-      } else if (isLight) {
-        o.material = carBodyMat("#ffe566", { roughness: 0.35, metalness: 0.4, emissive: "#cca822", emissiveIntensity: 0.35 });
-      } else {
-        o.material = carBodyMat(bodyColor);
-      }
-      o.castShadow = true;
-      o.receiveShadow = true;
-    });
+  paintVehicleModel(_model, _bodyColor) {
+    // unused — vehicles are procedural solid meshes now
   }
 
   updateVehicleExhaust(mesh, d, dt) {
@@ -1458,9 +1481,15 @@ export class GameWorld {
         this.debrisMeshes.delete(d.id);
         mesh = null;
       }
-      if (mesh && wantVehicle && !mesh.userData.isVehicle) {
+      if (mesh && wantVehicle && mesh.userData.paintVer !== 3) {
         this.props.remove(mesh);
-        mesh.traverse?.((o) => o.geometry?.dispose?.());
+        mesh.traverse?.((o) => {
+          o.geometry?.dispose?.();
+          if (o.material) {
+            if (Array.isArray(o.material)) o.material.forEach((m) => m.dispose?.());
+            else o.material.dispose?.();
+          }
+        });
         this.debrisMeshes.delete(d.id);
         mesh = null;
       }
