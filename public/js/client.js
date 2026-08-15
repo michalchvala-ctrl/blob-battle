@@ -8,6 +8,15 @@ const nameInput = $("name");
 const codeInput = $("code");
 nameInput.value = localStorage.getItem("zk-name") || "";
 
+const invertY = $("invert-y");
+invertY.checked = localStorage.getItem("zk-invert-y") !== "0";
+const world = new GameWorld($("view"));
+world.invertMouseY = invertY.checked;
+invertY.addEventListener("change", () => {
+  world.invertMouseY = invertY.checked;
+  localStorage.setItem("zk-invert-y", invertY.checked ? "1" : "0");
+});
+
 let myId = null;
 let lobby = null;
 let playing = false;
@@ -49,7 +58,6 @@ const socket = window.io({
   reconnectionAttempts: Infinity,
   timeout: 12000,
 });
-const world = new GameWorld($("view"));
 
 function requireSocket() {
   if (socket.connected) return true;

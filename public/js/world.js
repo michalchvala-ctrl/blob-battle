@@ -140,6 +140,8 @@ export class GameWorld {
     this.scene.add(this.camera);
     this.yaw = 0;
     this.pitch = 0.14;
+    this.invertMouseY = true;
+    this.bleedAcc = 0;
     this.camDist = 6.8;
     this.camHeight = 1.9;
     this.snapCam = false;
@@ -1040,11 +1042,13 @@ export class GameWorld {
     dy = THREE.MathUtils.clamp(dy, -40, 40);
     if (this.spectating) {
       this.specYaw -= dx * 0.003;
-      this.specPitch = THREE.MathUtils.clamp(this.specPitch + dy * 0.0022, 0.06, 0.82);
+      const sdy = this.invertMouseY ? -dy : dy;
+      this.specPitch = THREE.MathUtils.clamp(this.specPitch + sdy * 0.0022, 0.06, 0.82);
       return;
     }
     this.yaw -= dx * 0.0024;
-    this.pitch = THREE.MathUtils.clamp(this.pitch - dy * 0.0022, -1.52, 1.52);
+    const lookDy = this.invertMouseY ? -dy : dy;
+    this.pitch = THREE.MathUtils.clamp(this.pitch + lookDy * 0.0022, -1.52, 1.52);
   }
 
   zoom(deltaY) {
@@ -1280,7 +1284,25 @@ export class GameWorld {
       this.shake *= 0.86;
     }
     this.updateBlood(dt);
+    this.updateBleed(dt);
     this.renderer.render(this.scene, this.camera);
+  }
+
+  updateBleed(dt) {
+    if (!this.gunsMode || this.spectating) return;
+    this.bleedAcc = (this.bleedAcc || 0) + dt;
+    if (this.bleedAcc < 1) return;
+    this.bleedAcc = 0;
+    for (const rec of this.players.values()) {
+      const p = rec.t;
+      if (!p?.alive) continue;
+      const hp = p.hp ?? 100;
+      if (hp >= 100) continue;
+      const missing = 100 - hp;
+      // 1 drop at ~95 HP → ~14 drops near death
+      const amount = Math.max(1, Math.round(1 + (missing / 100) * 13));
+      this.spawnBlood(rec.mesh.position, amount);
+    }
   }
 
   spawnBlood(pos, amount = 16) {

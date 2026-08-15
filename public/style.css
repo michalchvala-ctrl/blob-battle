@@ -108,6 +108,23 @@ label {
   margin-bottom: 12px;
 }
 
+label.check {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  margin-bottom: 14px;
+  cursor: pointer;
+  user-select: none;
+}
+
+label.check input {
+  width: 18px;
+  height: 18px;
+  margin: 0;
+  accent-color: var(--accent);
+  cursor: pointer;
+}
+
 input,
 button {
   font: inherit;
