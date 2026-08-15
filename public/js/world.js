@@ -660,55 +660,20 @@ export class GameWorld {
 
   makeGrenadeMesh(d) {
     const g = new THREE.Group();
-    const body = new THREE.Mesh(new THREE.SphereGeometry(0.28, 12, 10), toon("#2f6b3a"));
+    const body = new THREE.Mesh(new THREE.SphereGeometry(0.28, 12, 10), toon(d.color || "#c5cdd4"));
     body.castShadow = true;
-    const pin = new THREE.Mesh(new THREE.CylinderGeometry(0.04, 0.04, 0.22, 6), toon("#c0c4c8"));
+    const band = new THREE.Mesh(new THREE.TorusGeometry(0.22, 0.04, 6, 12), toon("#6b7280"));
+    band.rotation.x = Math.PI / 2;
+    const pin = new THREE.Mesh(new THREE.CylinderGeometry(0.04, 0.04, 0.22, 6), toon("#e5e7eb"));
     pin.position.y = 0.28;
-    const lever = new THREE.Mesh(new THREE.BoxGeometry(0.08, 0.22, 0.04), toon("#8a9098"));
-    lever.position.set(0.12, 0.2, 0);
-    g.add(body, pin, lever);
+    g.add(body, band, pin);
     g.position.set(d.x || 0, d.y || 0, d.z || 0);
     return g;
   }
 
   spawnGrenadeBoom(ev) {
+    // legacy explosive VFX unused for smoke grenades
     if (!ev) return;
-    const origin = new THREE.Vector3(ev.x, ev.y || 0.5, ev.z);
-    const ring = new THREE.Mesh(
-      new THREE.RingGeometry(0.5, Math.min(30, ev.r || 30), 48),
-      new THREE.MeshBasicMaterial({ color: "#ff9e00", transparent: true, opacity: 0.55, side: THREE.DoubleSide }),
-    );
-    ring.rotation.x = -Math.PI / 2;
-    ring.position.copy(origin);
-    ring.position.y = 0.7;
-    this.scene.add(ring);
-    const flash = new THREE.Mesh(
-      new THREE.SphereGeometry(1.2, 12, 10),
-      new THREE.MeshBasicMaterial({ color: "#ffe66d", transparent: true, opacity: 0.85 }),
-    );
-    flash.position.copy(origin);
-    this.scene.add(flash);
-    this.addShake(0.7);
-    const born = performance.now();
-    const tick = () => {
-      const age = (performance.now() - born) / 520;
-      if (age >= 1) {
-        this.scene.remove(ring);
-        this.scene.remove(flash);
-        ring.geometry.dispose();
-        ring.material.dispose();
-        flash.geometry.dispose();
-        flash.material.dispose();
-        return;
-      }
-      const s = 0.2 + age * 1.2;
-      ring.scale.set(s, s, s);
-      ring.material.opacity = 0.55 * (1 - age);
-      flash.scale.setScalar(1 + age * 8);
-      flash.material.opacity = 0.85 * (1 - age);
-      requestAnimationFrame(tick);
-    };
-    requestAnimationFrame(tick);
   }
 
   spawnShotTrail(ev) {
@@ -1325,7 +1290,7 @@ export class GameWorld {
         vx: (Math.random() - 0.5) * 3.5,
         vy: 1.2 + Math.random() * 3.5,
         vz: (Math.random() - 0.5) * 3.5,
-        life: 4 + Math.random() * 3,
+        life: 30,
         floorY: PLATFORM_TOP + 0.03,
         settled: false,
       });
@@ -1345,8 +1310,8 @@ export class GameWorld {
         continue;
       }
       if (b.settled) {
-        b.mesh.material.opacity = Math.min(1, b.life * 0.35);
         b.mesh.material.transparent = true;
+        b.mesh.material.opacity = b.life < 4 ? b.life / 4 : 0.92;
         continue;
       }
       b.vy -= 28 * dt;
@@ -1359,11 +1324,101 @@ export class GameWorld {
         b.vz *= 0.2;
         b.vy = 0;
         b.settled = true;
-        // Flatten into a puddle stain
+        b.life = 30;
         b.mesh.scale.set(1.8, 0.25, 1.8);
         b.mesh.material.color.set("#6b0f1a");
+        b.mesh.material.transparent = true;
+        b.mesh.material.opacity = 0.92;
       }
     }
+  }
+
+  syncSmokes(list) {
+    if (!this.smokeMeshes) this.smokeMeshes = new Map();
+    if (!list) list = [];
+    const seen = new Set();
+    for (const s of list) {
+      seen.add(s.id);
+      let group = this.smokeMeshes.get(s.id);
+      if (!group) {
+        group = this.makeSmokeCloud(s);
+        this.scene.add(group);
+        this.smokeMeshes.set(s.id, group);
+      }
+      group.position.set(s.x, s.y, s.z);
+      const fade = Math.min(1, (s.life || 0) / 8);
+      group.traverse((o) => {
+        if (o.material?.opacity != null) {
+          o.material.opacity = (o.userData.baseOp || 0.22) * fade;
+        }
+      });
+      const grow = 0.85 + 0.15 * Math.min(1, 1 - (s.life || 0) / (s.maxLife || 60));
+      group.scale.setScalar(grow);
+    }
+    for (const [id, group] of this.smokeMeshes) {
+      if (!seen.has(id)) {
+        this.scene.remove(group);
+        group.traverse((o) => {
+          o.geometry?.dispose?.();
+          o.material?.dispose?.();
+        });
+        this.smokeMeshes.delete(id);
+      }
+    }
+  }
+
+  makeSmokeCloud(s) {
+    const g = new THREE.Group();
+    const R = s.r || 16;
+    const cols = ["#9aa3ad", "#b8c0c8", "#7d868f", "#cfd5db"];
+    for (let i = 0; i < 10; i++) {
+      const rad = R * (0.35 + (i % 4) * 0.18);
+      const mesh = new THREE.Mesh(
+        new THREE.SphereGeometry(rad, 14, 10),
+        new THREE.MeshBasicMaterial({
+          color: cols[i % cols.length],
+          transparent: true,
+          opacity: 0.18 + (i % 3) * 0.04,
+          depthWrite: false,
+        }),
+      );
+      mesh.userData.baseOp = mesh.material.opacity;
+      mesh.position.set(
+        (Math.random() - 0.5) * R * 0.55,
+        (Math.random() - 0.5) * R * 0.35,
+        (Math.random() - 0.5) * R * 0.55,
+      );
+      g.add(mesh);
+    }
+    g.position.set(s.x || 0, s.y || 1.2, s.z || 0);
+    return g;
+  }
+
+  makeSmokeCloud(s) {
+    const g = new THREE.Group();
+    const R = s.r || 16;
+    const cols = ["#9aa3ad", "#b8c0c8", "#7d868f", "#cfd5db"];
+    for (let i = 0; i < 10; i++) {
+      const rad = R * (0.35 + (i % 4) * 0.18);
+      const mesh = new THREE.Mesh(
+        new THREE.SphereGeometry(rad, 14, 10),
+        new THREE.MeshBasicMaterial({
+          color: cols[i % cols.length],
+          transparent: true,
+          opacity: 0.18 + (i % 3) * 0.04,
+          depthWrite: false,
+        }),
+      );
+      mesh.userData.baseOp = mesh.material.opacity;
+      mesh.position.set(
+        (Math.random() - 0.5) * R * 0.55,
+        (Math.random() - 0.5) * R * 0.35,
+        (Math.random() - 0.5) * R * 0.55,
+      );
+      g.add(mesh);
+    }
+    g.position.set(s.x || 0, s.y || 1.2, s.z || 0);
+    return g;
   }
 
   setBomb(id) {

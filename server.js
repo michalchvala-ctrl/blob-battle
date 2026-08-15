@@ -90,6 +90,10 @@ io.on("connection", (socket) => {
     rooms.get(socket.data.code)?.setInput(socket.id, data || {});
   });
 
+  socket.on("nade", (data) => {
+    rooms.get(socket.data.code)?.requestGrenade(socket.id, data || {});
+  });
+
   socket.on("disconnect", () => {
     leaveCurrent(socket);
   });

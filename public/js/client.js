@@ -233,6 +233,7 @@ socket.on("st", (st) => {
   world.syncPlayers(st.players);
   world.syncBoxes(st.boxes);
   world.syncDebris(st.debris);
+  world.syncSmokes?.(st.smokes);
   if (st.shards) world.syncShards(st.shards);
   world.setBomb(st.bombId);
 
@@ -257,7 +258,7 @@ socket.on("st", (st) => {
   }
   if ($("hint-bar")) {
     $("hint-bar").textContent = gunsOn
-      ? "WASD · skok · klik STREĽBA · G granát · Shift beh · pohľad 1. osoba · reset po 30 zabitiach"
+      ? "WASD · skok · klik STREĽBA · G dymový granát · Shift beh · reset po 30 zabitiach"
       : "WASD · skok · klik úder · Shift beh · pohľad 1. osoba · Esc uvoľní myš";
   }
 
@@ -382,12 +383,14 @@ function handleEvent(ev) {
     sfx.fall();
     world.addShake(0.4);
   } else if (ev.type === "grenadeThrow") {
-    text = `${ev.by} hodil granát`;
+    text = `${ev.by} hodil dymový granát`;
     sfx.nade();
-  } else if (ev.type === "grenadeBoom") {
-    text = "💥 Granát!";
+  } else if (ev.type === "smoke") {
+    text = "💨 Dymová clona!";
     sfx.boom();
-    world.spawnGrenadeBoom?.(ev);
+  } else if (ev.type === "grenadeBoom") {
+    // legacy
+    sfx.boom();
   } else if (ev.type === "medkit") {
     text = `${ev.by} zobral lekárničku (${ev.hp}%)`;
     sfx.pass();
@@ -426,9 +429,16 @@ window.addEventListener("keyup", (e) => {
   if (e.code === "KeyG" && grenadeHolding) {
     const held = (performance.now() - grenadeHoldStart) / 1400;
     grenadeCharge = Math.max(0.15, Math.min(1, held));
-    grenadeQueued = true;
     grenadeHolding = false;
     $("nade-charge").classList.add("hidden");
+    if (playing && world.gunsMode && !world.spectating && myId) {
+      socket.emit("nade", {
+        charge: grenadeCharge,
+        pitch: world.pitch,
+        yaw: world.yaw,
+      });
+      sfx.nade();
+    }
   }
 });
 

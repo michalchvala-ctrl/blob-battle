@@ -303,6 +303,8 @@ export class GameRoom {
     this.medkits = [];
     this.maxMedkits = 4;
     this.grenades = [];
+    this.smokes = [];
+    this.smokeNextId = 1;
     this.nextCrackT = Infinity;
     this.applyLayout(resolveArenaLayout("circle"));
   }
@@ -338,6 +340,7 @@ export class GameRoom {
     this.medkitSpawnT = 6 + Math.random() * 5;
     for (const g of this.grenades || []) this.world.removeBody(g);
     this.grenades = [];
+    this.smokes = [];
     this.clearStructures();
     this.clearShards();
     this.layout = layout;
@@ -1394,6 +1397,7 @@ export class GameRoom {
     this.steerGoats(dt);
     this.stepBullets(dt);
     this.stepGrenades(dt);
+    this.stepSmokes(dt);
     this.world.step(1 / 60, dt, 4);
     this.applyPropHitKnockback();
 
@@ -1501,6 +1505,22 @@ export class GameRoom {
     }
   }
 
+  /** Any player can throw — dedicated path (not one-shot input flag). */
+  requestGrenade(id, data = {}) {
+    const p = this.players.get(id);
+    if (!p || !p.alive) return;
+    if (this.mode !== "guns" || this.phase !== "playing") return;
+    if ((p.grenadeCd || 0) > 0) return;
+    const charge = clamp(Number(data.charge) || 0.4, 0.12, 1);
+    const pitch = clamp(Number(data.pitch) ?? p.input.pitch ?? 0, -1.52, 1.52);
+    if (data.yaw != null) {
+      p.input.yaw = Number(data.yaw) || 0;
+      p.yaw = p.input.yaw;
+    }
+    this.throwGrenade(p, charge, pitch);
+    p.grenadeCd = 2.6;
+  }
+
   throwGrenade(p, charge, pitch) {
     const c = clamp(charge, 0.12, 1);
     const yaw = p.input.yaw || p.yaw || 0;
@@ -1526,13 +1546,13 @@ export class GameRoom {
     body.userData = {
       id: this.debrisNextId++,
       kind: "grenade",
-      color: "#2f6b3a",
+      color: "#c5cdd4",
       sx: 0.56,
       sy: 0.56,
       sz: 0.56,
       ownerId: p.id,
-      fuse: 2.35,
-      armed: 0.35,
+      fuse: 2.0,
+      armed: 0.25,
     };
     this.world.addBody(body);
     this.grenades.push(body);
@@ -1547,70 +1567,37 @@ export class GameRoom {
       ud.fuse -= dt;
       ud.armed = Math.max(0, (ud.armed || 0) - dt);
       if (g.position.y < -12 || ud.fuse <= 0) {
-        this.explodeGrenade(g);
+        this.deploySmoke(g);
         this.world.removeBody(g);
         this.grenades.splice(i, 1);
       }
     }
   }
 
-  explodeGrenade(g) {
+  deploySmoke(g) {
     const x = g.position.x;
-    const y = g.position.y;
+    const y = Math.max(1.2, g.position.y);
     const z = g.position.z;
-    const R = 30;
-    const ownerId = g.userData?.ownerId;
-    this.events.push({ type: "grenadeBoom", x, y, z, r: R });
+    const R = 16;
+    const smoke = {
+      id: this.smokeNextId++,
+      x,
+      y,
+      z,
+      r: R,
+      life: 60,
+      maxLife: 60,
+      ownerId: g.userData?.ownerId,
+    };
+    this.smokes.push(smoke);
+    this.events.push({ type: "smoke", id: smoke.id, x, y, z, r: R, life: 60 });
+  }
 
-    for (const p of this.players.values()) {
-      if (!p.alive) continue;
-      const dx = p.body.position.x - x;
-      const dy = p.body.position.y - y;
-      const dz = p.body.position.z - z;
-      const d = Math.hypot(dx, dy, dz);
-      if (d > R) continue;
-      const nd = Math.max(d, 0.2);
-      const falloff = 1 - Math.min(1, d / R);
-      const inv = 1 / nd;
-      const strength = (18 + falloff * 28) * falloff;
-      p.body.velocity.x += dx * inv * strength;
-      p.body.velocity.z += dz * inv * strength;
-      p.body.velocity.y += 4 + falloff * 14;
-      p.body.wakeUp();
-      if (this.mode === "guns") {
-        const dmg = Math.round(18 + falloff * 52);
-        p.hp = Math.max(0, (p.hp ?? 100) - dmg);
-        if (ownerId && ownerId !== p.id) {
-          p.lastHitBy = ownerId;
-          p.lastHitAt = this.roundT;
-        }
-        this.events.push({
-          type: "hit",
-          by: this.players.get(ownerId)?.name || "Granát",
-          victim: p.name,
-          id: p.id,
-          hp: p.hp,
-        });
-        if (p.hp <= 0) this.kill(p, "shot");
-      }
-    }
-
-    for (const prop of [...this.boxes, ...this.debris, ...this.goats]) {
-      const dx = prop.position.x - x;
-      const dy = prop.position.y - y;
-      const dz = prop.position.z - z;
-      const d = Math.hypot(dx, dy, dz);
-      if (d > R) continue;
-      const nd = Math.max(d, 0.2);
-      const falloff = 1 - Math.min(1, d / R);
-      const inv = 1 / nd;
-      const kick = (22 + falloff * 40) * falloff;
-      prop.wakeUp();
-      prop.velocity.x += dx * inv * kick;
-      prop.velocity.z += dz * inv * kick;
-      prop.velocity.y += 8 + falloff * 16;
-      prop.angularVelocity.x += (Math.random() - 0.5) * 10;
-      prop.angularVelocity.z += (Math.random() - 0.5) * 10;
+  stepSmokes(dt) {
+    if (!this.smokes?.length) return;
+    for (let i = this.smokes.length - 1; i >= 0; i--) {
+      this.smokes[i].life -= dt;
+      if (this.smokes[i].life <= 0) this.smokes.splice(i, 1);
     }
   }
 
@@ -1991,6 +1978,7 @@ export class GameRoom {
     this.bullets = [];
     for (const g of this.grenades || []) this.world.removeBody(g);
     this.grenades = [];
+    this.smokes = [];
     let best = null;
     let bestS = -1;
     for (const p of this.players.values()) {
@@ -2268,6 +2256,15 @@ export class GameRoom {
       players,
       boxes,
       debris: debrisOut,
+      smokes: (this.smokes || []).map((s) => ({
+        id: s.id,
+        x: s.x,
+        y: s.y,
+        z: s.z,
+        r: s.r,
+        life: s.life,
+        maxLife: s.maxLife || 60,
+      })),
       shards: this.shardSnapshot(),
       events: ev,
     };
