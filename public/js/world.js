@@ -2,6 +2,7 @@ import * as THREE from "three";
 import { GLTFLoader } from "three/addons/loaders/GLTFLoader.js";
 import {
   BUILDING_MODELS,
+  SKYSCRAPER_MODELS,
   TREE_MODELS,
   buildingModelPath,
   treeModelPath,
@@ -317,7 +318,8 @@ export class GameWorld {
   async preloadStructureModels() {
     const loader = new GLTFLoader();
     const jobs = [];
-    for (const id of BUILDING_MODELS) {
+    const buildingIds = [...BUILDING_MODELS, ...SKYSCRAPER_MODELS];
+    for (const id of buildingIds) {
       jobs.push(
         loader.loadAsync(buildingModelPath(id)).then((gltf) => {
           this.prepareGltfScene(gltf.scene);
@@ -349,8 +351,14 @@ export class GameWorld {
       const mats = Array.isArray(o.material) ? o.material : [o.material];
       for (const m of mats) {
         if (!m) continue;
-        m.side = THREE.DoubleSide;
-        m.shadowSide = THREE.DoubleSide;
+        // Keep Kenney vertex colors / textures — just enable shadows & double-side
+        m.side = THREE.FrontSide;
+        m.shadowSide = THREE.FrontSide;
+        if (m.map) {
+          m.map.colorSpace = THREE.SRGBColorSpace;
+          m.map.needsUpdate = true;
+        }
+        m.needsUpdate = true;
       }
     });
   }
@@ -405,8 +413,8 @@ export class GameWorld {
       const d = s.d || 8;
       if (proto) {
         const model = proto.clone(true);
-        // Fit footprint; allow roof a bit taller than collision for nicer silhouette
-        this.fitGltfToBox(model, w * 0.98, h * 1.15, d * 0.98, { uniform: true });
+        // Stretch to exact collision box so walls match physics (no walking through)
+        this.fitGltfToBox(model, w, h, d, { uniform: false });
         model.position.y += 0.575;
         g.add(model);
         this.addBuildingLadder(g, w, d, h);
@@ -595,17 +603,40 @@ export class GameWorld {
       g.add(top, icing);
     } else {
       const huge = Math.max(p.w || 0, p.d || 0) > 80;
-      const top = new THREE.Mesh(new THREE.BoxGeometry(p.w, h, p.d), pink);
-      top.castShadow = !huge;
-      top.receiveShadow = true;
-      const icing = new THREE.Mesh(
-        new THREE.BoxGeometry(Math.max(0.2, p.w - 0.55), 0.1, Math.max(0.2, p.d - 0.55)),
-        cream,
-      );
-      icing.position.y = h * 0.5;
-      icing.receiveShadow = true;
-      g.add(top, icing);
-      if (!huge) {
+      if (huge) {
+        // Guns city asphalt instead of jelly pink
+        const asphalt = toon("#3a3f48");
+        const curb = toon("#5a616c");
+        const top = new THREE.Mesh(new THREE.BoxGeometry(p.w, h, p.d), asphalt);
+        top.receiveShadow = true;
+        const surface = new THREE.Mesh(
+          new THREE.BoxGeometry(Math.max(0.2, p.w - 0.4), 0.08, Math.max(0.2, p.d - 0.4)),
+          curb,
+        );
+        surface.position.y = h * 0.5;
+        surface.receiveShadow = true;
+        g.add(top, surface);
+        // Light street grid marks
+        const lineMat = toon("#c9a227");
+        for (let i = -3; i <= 3; i++) {
+          if (i === 0) continue;
+          const hx = new THREE.Mesh(new THREE.BoxGeometry(p.w * 0.9, 0.04, 0.35), lineMat);
+          hx.position.set(0, h * 0.54, i * 40);
+          const hz = new THREE.Mesh(new THREE.BoxGeometry(0.35, 0.04, p.d * 0.9), lineMat);
+          hz.position.set(i * 40, h * 0.54, 0);
+          g.add(hx, hz);
+        }
+      } else {
+        const top = new THREE.Mesh(new THREE.BoxGeometry(p.w, h, p.d), pink);
+        top.castShadow = true;
+        top.receiveShadow = true;
+        const icing = new THREE.Mesh(
+          new THREE.BoxGeometry(Math.max(0.2, p.w - 0.55), 0.1, Math.max(0.2, p.d - 0.55)),
+          cream,
+        );
+        icing.position.y = h * 0.5;
+        icing.receiveShadow = true;
+        g.add(top, icing);
         const rimW = new THREE.Mesh(new THREE.BoxGeometry(p.w + 0.15, 0.18, 0.28), gold);
         rimW.position.set(0, h * 0.48, p.d * 0.5);
         const rimW2 = rimW.clone();

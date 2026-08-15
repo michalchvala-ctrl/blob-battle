@@ -1,18 +1,28 @@
-/** Kenney CC0 models used on the guns battlefield (see /models/LICENSE-Kenney.txt). */
+/** Kenney CC0 City Kit Commercial + Nature trees (see /models/LICENSE-Kenney.txt). */
 
 export const BUILDING_MODELS = [
-  "building-type-a",
-  "building-type-b",
-  "building-type-c",
-  "building-type-d",
-  "building-type-e",
-  "building-type-g",
-  "building-type-i",
-  "building-type-k",
-  "building-type-m",
-  "building-type-o",
-  "building-type-q",
-  "building-type-s",
+  "building-a",
+  "building-b",
+  "building-c",
+  "building-d",
+  "building-e",
+  "building-f",
+  "building-g",
+  "building-h",
+  "building-i",
+  "building-j",
+  "building-k",
+  "building-l",
+  "building-m",
+  "building-n",
+];
+
+export const SKYSCRAPER_MODELS = [
+  "building-skyscraper-a",
+  "building-skyscraper-b",
+  "building-skyscraper-c",
+  "building-skyscraper-d",
+  "building-skyscraper-e",
 ];
 
 export const TREE_MODELS = [

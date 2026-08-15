@@ -444,24 +444,33 @@ export class GameRoom {
     return false;
   }
 
-  /** Static buildings + trees for the big guns map (hollow interiors, roofs, ladders). */
+  /** City blocks + trees for the guns map (solid buildings — no walking through walls). */
   spawnBattlefieldDecor() {
     this.clearStructures();
     this.ladders = [];
     const items = [];
-    const buildingModels = [
-      "building-type-a",
-      "building-type-b",
-      "building-type-c",
-      "building-type-d",
-      "building-type-e",
-      "building-type-g",
-      "building-type-i",
-      "building-type-k",
-      "building-type-m",
-      "building-type-o",
-      "building-type-q",
-      "building-type-s",
+    const lowModels = [
+      "building-a",
+      "building-b",
+      "building-c",
+      "building-d",
+      "building-e",
+      "building-f",
+      "building-g",
+      "building-h",
+      "building-i",
+      "building-j",
+      "building-k",
+      "building-l",
+      "building-m",
+      "building-n",
+    ];
+    const skyModels = [
+      "building-skyscraper-a",
+      "building-skyscraper-b",
+      "building-skyscraper-c",
+      "building-skyscraper-d",
+      "building-skyscraper-e",
     ];
     const treeModels = [
       "tree_oak",
@@ -476,56 +485,66 @@ export class GameRoom {
       "tree-small",
     ];
     let n = 0;
-    for (let ix = -3; ix <= 3; ix++) {
-      for (let iz = -3; iz <= 3; iz++) {
-        if (Math.abs(ix) + Math.abs(iz) < 2) continue;
-        const x = ix * 38 + ((ix * 17 + iz * 13) % 7) - 3;
-        const z = iz * 38 + ((ix * 11 + iz * 19) % 7) - 3;
-        if (Math.hypot(x, z) < 32) continue;
-        if (Math.abs(x) > 130 || Math.abs(z) > 130) continue;
-        const w = 11 + ((n * 3) % 5);
-        const d = 9 + ((n * 5) % 5);
-        const h = 7 + ((n * 7) % 5);
+    // City grid: building footprints with street gaps between blocks
+    const cell = 28;
+    const street = 12;
+    for (let ix = -4; ix <= 4; ix++) {
+      for (let iz = -4; iz <= 4; iz++) {
+        // Open plaza in the middle for fights / spawns
+        if (Math.abs(ix) <= 1 && Math.abs(iz) <= 1) continue;
+        const x = ix * (cell + street) + ((ix * 3 + iz) % 5) - 2;
+        const z = iz * (cell + street) + ((ix + iz * 5) % 5) - 2;
+        if (Math.hypot(x, z) < 28) continue;
+        if (Math.abs(x) > 135 || Math.abs(z) > 135) continue;
+        const tall = (n + ix + iz) % 4 === 0;
+        const model = tall
+          ? skyModels[n % skyModels.length]
+          : lowModels[n % lowModels.length];
+        const w = tall ? 14 + (n % 3) * 2 : 12 + (n % 4);
+        const d = tall ? 14 + ((n * 2) % 3) * 2 : 12 + ((n * 3) % 4);
+        const h = tall ? 28 + (n % 5) * 4 : 10 + (n % 6) * 2;
         items.push({
           id: n,
           kind: "building",
-          model: buildingModels[n % buildingModels.length],
+          model,
+          tall: !!tall,
           x,
           z,
           w,
           d,
           h,
-          rotY: ((n * 90) % 360) * (Math.PI / 180),
-          color: "#e8dcc8",
-          hollow: true,
+          rotY: ((n % 4) * 90) * (Math.PI / 180),
+          color: "#c8d0d8",
+          solid: true,
         });
         n++;
       }
     }
-    for (let i = 0; i < 48; i++) {
-      const a = (i / 48) * Math.PI * 2 + i * 0.17;
-      const rr = 22 + (i % 8) * 14 + (i % 3) * 4;
+    // Street trees along grid lines
+    for (let i = 0; i < 56; i++) {
+      const a = (i / 56) * Math.PI * 2 + i * 0.11;
+      const rr = 30 + (i % 9) * 12;
       const x = Math.cos(a) * rr;
       const z = Math.sin(a) * rr;
       if (Math.abs(x) > 140 || Math.abs(z) > 140) continue;
-      if (this.tooCloseToStructure(x, z, 6, items)) continue;
+      if (this.tooCloseToStructure(x, z, 7, items)) continue;
       items.push({
         id: n++,
         kind: "tree",
         model: treeModels[i % treeModels.length],
         x,
         z,
-        r: 2.0 + (i % 4) * 0.5,
-        h: 6 + (i % 5) * 1.3,
+        r: 2.0 + (i % 4) * 0.45,
+        h: 6 + (i % 5) * 1.2,
         color: i % 2 === 0 ? "#3ecf6a" : "#2aad52",
       });
     }
     this.layout.structures = items;
-    this.layoutKey += `|struct:${items.length}:${items.map((s) => `${s.kind},${s.model || ""},${s.x.toFixed(1)},${s.z.toFixed(1)}`).join(";")}`;
+    this.layoutKey += `|city:${items.length}:${items.map((s) => `${s.kind},${s.model || ""},${s.x.toFixed(0)},${s.z.toFixed(0)}`).join(";")}`;
 
     for (const s of items) {
       if (s.kind === "building") {
-        this.buildHollowBuilding(s);
+        this.buildSolidBuilding(s);
       } else {
         const body = new CANNON.Body({
           mass: 0,
@@ -535,7 +554,7 @@ export class GameRoom {
         const trunkH = s.h * 0.55;
         const canopyR = s.r;
         body.addShape(new CANNON.Cylinder(0.35, 0.45, trunkH, 8), new CANNON.Vec3(0, trunkH * 0.5, 0));
-        body.addShape(new CANNON.Sphere(canopyR), new CANNON.Vec3(0, trunkH + canopyR * 0.65, 0));
+        body.addShape(new CANNON.Sphere(canopyR * 0.85), new CANNON.Vec3(0, trunkH + canopyR * 0.55, 0));
         body.position.set(s.x, PLATFORM_TOP, s.z);
         body.userData = { kind: s.kind, id: s.id, static: true };
         this.world.addBody(body);
@@ -544,101 +563,51 @@ export class GameRoom {
     }
   }
 
-  buildHollowBuilding(s) {
-    const thick = 0.45;
-    const winW = Math.min(2.4, s.w * 0.28);
-    const winH = Math.min(2.2, s.h * 0.28);
-    const winY = PLATFORM_TOP + s.h * 0.45;
-    const addWall = (cx, cy, cz, hw, hh, hd) => {
-      const body = new CANNON.Body({
-        mass: 0,
-        type: CANNON.Body.STATIC,
-        material: this.groundMat,
-      });
-      body.addShape(new CANNON.Box(new CANNON.Vec3(hw, hh, hd)));
-      body.position.set(cx, cy, cz);
-      body.userData = { kind: "building", id: s.id, static: true };
-      this.world.addBody(body);
-      this.structures.push(body);
-    };
-    // Local offsets then rotate around building center for rotY
-    const rot = (lx, lz) => {
-      const c = Math.cos(s.rotY || 0);
-      const sn = Math.sin(s.rotY || 0);
-      return { x: s.x + lx * c - lz * sn, z: s.z + lx * sn + lz * c };
-    };
-    const wallH = s.h * 0.5;
-    const midY = PLATFORM_TOP + wallH;
-    // Floor + roof (walkable)
-    addWall(s.x, PLATFORM_TOP + 0.12, s.z, s.w * 0.5, 0.12, s.d * 0.5);
-    addWall(s.x, PLATFORM_TOP + s.h + 0.15, s.z, s.w * 0.52, 0.18, s.d * 0.52);
+  /** Solid textured city block — walls block players/bullets; roof is walkable; ladder on +Z. */
+  buildSolidBuilding(s) {
+    const hw = (s.w || 12) * 0.5;
+    const hd = (s.d || 12) * 0.5;
+    const h = s.h || 12;
+    const body = new CANNON.Body({
+      mass: 0,
+      type: CANNON.Body.STATIC,
+      material: this.groundMat,
+    });
+    // Main volume: cannot walk through walls
+    body.addShape(new CANNON.Box(new CANNON.Vec3(hw, h * 0.5, hd)));
+    body.position.set(s.x, PLATFORM_TOP + h * 0.5, s.z);
+    if (s.rotY) body.quaternion.setFromEuler(0, s.rotY, 0);
+    body.userData = { kind: "building", id: s.id, static: true, solid: true };
+    this.world.addBody(body);
+    this.structures.push(body);
 
-    // Four walls with window gaps; -Z face has a walk-in door instead of a sill
-    const doorW = Math.min(2.1, s.w * 0.32);
-    const doorH = Math.min(s.h * 0.72, 3.2);
-    const sides = [
-      { ax: 0, az: 1, len: s.w, door: false }, // +Z (ladder)
-      { ax: 0, az: -1, len: s.w, door: true },
-      { ax: 1, az: 0, len: s.d, door: false },
-      { ax: -1, az: 0, len: s.d, door: false },
-    ];
-    for (const side of sides) {
-      const alongX = side.az !== 0;
-      const gapW = side.door ? doorW : winW;
-      const half = side.len * 0.5;
-      const panel = (half - gapW * 0.5) * 0.5;
-      const off = gapW * 0.5 + panel;
-      for (const sign of [-1, 1]) {
-        if (alongX) {
-          const p = rot(sign * off, side.az * (s.d * 0.5 - thick * 0.5));
-          addWall(p.x, midY, p.z, panel, wallH, thick * 0.5);
-        } else {
-          const p = rot(side.ax * (s.w * 0.5 - thick * 0.5), sign * off);
-          addWall(p.x, midY, p.z, thick * 0.5, wallH, panel);
-        }
-      }
-      if (side.door) {
-        // Lintel only — open doorway from floor up
-        const lintelH = Math.max(0.35, (s.h - doorH) * 0.5);
-        const lintelY = PLATFORM_TOP + s.h - lintelH;
-        const p = rot(0, side.az * (s.d * 0.5 - thick * 0.5));
-        addWall(p.x, lintelY, p.z, doorW * 0.5 + 0.15, lintelH, thick * 0.5);
-      } else {
-        // lintel above window
-        const lintelH = (s.h - (winY - PLATFORM_TOP + winH * 0.5)) * 0.5;
-        const lintelY = PLATFORM_TOP + s.h - lintelH;
-        if (alongX) {
-          const p = rot(0, side.az * (s.d * 0.5 - thick * 0.5));
-          addWall(p.x, lintelY, p.z, winW * 0.5 + 0.2, Math.max(0.4, lintelH), thick * 0.5);
-        } else {
-          const p = rot(side.ax * (s.w * 0.5 - thick * 0.5), 0);
-          addWall(p.x, lintelY, p.z, thick * 0.5, Math.max(0.4, lintelH), winW * 0.5 + 0.2);
-        }
-        // sill under window
-        const sillH = (winY - PLATFORM_TOP - winH * 0.5) * 0.5;
-        const sillY = PLATFORM_TOP + sillH;
-        if (sillH > 0.3) {
-          if (alongX) {
-            const p = rot(0, side.az * (s.d * 0.5 - thick * 0.5));
-            addWall(p.x, sillY, p.z, winW * 0.5 + 0.2, sillH, thick * 0.5);
-          } else {
-            const p = rot(side.ax * (s.w * 0.5 - thick * 0.5), 0);
-            addWall(p.x, sillY, p.z, thick * 0.5, sillH, winW * 0.5 + 0.2);
-          }
-        }
-      }
-    }
+    // Thin roof lip slightly above the box so landing feels solid
+    const roof = new CANNON.Body({
+      mass: 0,
+      type: CANNON.Body.STATIC,
+      material: this.groundMat,
+    });
+    roof.addShape(new CANNON.Box(new CANNON.Vec3(hw + 0.15, 0.2, hd + 0.15)));
+    roof.position.set(s.x, PLATFORM_TOP + h + 0.2, s.z);
+    if (s.rotY) roof.quaternion.setFromEuler(0, s.rotY, 0);
+    roof.userData = { kind: "building", id: s.id, static: true, roof: true };
+    this.world.addBody(roof);
+    this.structures.push(roof);
 
-    // Ladder on +Z face
-    const ladderLocal = { x: 0, z: s.d * 0.5 + 0.55 };
-    const lp = rot(ladderLocal.x, ladderLocal.z);
+    // Ladder on local +Z face
+    const c = Math.cos(s.rotY || 0);
+    const sn = Math.sin(s.rotY || 0);
+    const lx = 0;
+    const lz = hd + 0.55;
+    const lp = { x: s.x + lx * c - lz * sn, z: s.z + lx * sn + lz * c };
     const ladderBody = new CANNON.Body({
       mass: 0,
       type: CANNON.Body.STATIC,
       material: this.boxMat,
     });
-    ladderBody.addShape(new CANNON.Box(new CANNON.Vec3(0.55, s.h * 0.5, 0.12)));
-    ladderBody.position.set(lp.x, PLATFORM_TOP + s.h * 0.5, lp.z);
+    ladderBody.addShape(new CANNON.Box(new CANNON.Vec3(0.55, h * 0.5, 0.12)));
+    ladderBody.position.set(lp.x, PLATFORM_TOP + h * 0.5, lp.z);
+    if (s.rotY) ladderBody.quaternion.setFromEuler(0, s.rotY, 0);
     ladderBody.userData = { kind: "ladder", id: s.id, static: true };
     this.world.addBody(ladderBody);
     this.structures.push(ladderBody);
@@ -646,9 +615,14 @@ export class GameRoom {
       x: lp.x,
       z: lp.z,
       y0: PLATFORM_TOP,
-      y1: PLATFORM_TOP + s.h + 0.4,
-      r: 1.35,
+      y1: PLATFORM_TOP + h + 0.5,
+      r: 1.45,
     });
+  }
+
+  /** @deprecated hollow interiors — kept unused; solid city buildings replace this */
+  buildHollowBuilding(s) {
+    this.buildSolidBuilding(s);
   }
 
   tickSniperDrop(dt) {

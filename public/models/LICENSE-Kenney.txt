@@ -1,7 +1,7 @@
 Kenney 3D assets (CC0)
 
-Buildings: City Kit Suburban (2.0) — www.kenney.nl/assets/city-kit-suburban
-Trees: Nature Kit + City Kit Suburban — www.kenney.nl/assets/nature-kit
+Buildings: City Kit Commercial — www.kenney.nl/assets/city-kit-commercial
+Trees: Nature Kit + City Kit Suburban — www.kenney.nl
 
 License: Creative Commons Zero (CC0)
 http://creativecommons.org/publicdomain/zero/1.0/
