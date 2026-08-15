@@ -545,66 +545,68 @@ export class GameRoom {
       });
     }
 
-    // Kenney road tiles along street corridors (CC0) — sparse so state stays light
-    const roadModels = ["road_straight", "road_crossing", "road_crossroad", "road_intersection"];
-    const step = cell + street; // 40
+    // Continuous Kenney road grid (tiles abut — no gaps)
+    const TILE = 10;
+    const grid = cell + street; // 40
     for (let ix = -4; ix <= 4; ix++) {
-      for (let t = -4; t <= 4; t++) {
-        const x = ix * step;
-        const z = t * 18;
+      const x = ix * grid;
+      for (let z = -140; z <= 140; z += TILE) {
         if (Math.abs(x) > 140 || Math.abs(z) > 140) continue;
-        if (Math.hypot(x, z) < 24) continue;
+        if (Math.hypot(x, z) < 18) continue;
+        const onCross = Math.abs(((z % grid) + grid) % grid) < 0.01 || Math.abs((((z % grid) + grid) % grid) - grid) < 0.01;
         items.push({
           id: n++,
           kind: "road",
-          model: Math.abs(t) % 3 === 0 ? roadModels[1] : roadModels[0],
+          model: onCross ? "road_crossroad" : "road_straight",
           x,
           z,
-          w: 12,
-          d: 12,
+          w: TILE,
+          d: TILE,
           rotY: 0,
         });
       }
     }
     for (let iz = -4; iz <= 4; iz++) {
-      for (let t = -4; t <= 4; t++) {
-        const z = iz * step;
-        const x = t * 18 + 9;
+      const z = iz * grid;
+      for (let x = -140; x <= 140; x += TILE) {
         if (Math.abs(x) > 140 || Math.abs(z) > 140) continue;
-        if (Math.hypot(x, z) < 24) continue;
+        if (Math.hypot(x, z) < 18) continue;
+        // Skip cells already covered by N–S roads
+        const onVert = Math.abs(((x % grid) + grid) % grid) < 0.01 || Math.abs((((x % grid) + grid) % grid) - grid) < 0.01;
+        if (onVert) continue;
         items.push({
           id: n++,
           kind: "road",
           model: "road_straight",
           x,
           z,
-          w: 12,
-          d: 12,
+          w: TILE,
+          d: TILE,
           rotY: Math.PI / 2,
         });
       }
     }
 
-    // Parked Quaternius cars — driveable (E to enter)
+    // Driveable cars parked along roads
     const carModels = ["BasicCar", "Taxi", "CopCar", "SimpleCarShort", "RaceCar"];
     const carSpawns = [];
-    for (let i = 0; i < 28; i++) {
-      const along = i % 2 === 0;
-      const lane = ((i / 2) | 0) - 7;
-      const x = along ? lane * 18 + ((i * 3) % 7) - 3 : 22 + (i % 5) * 2;
-      const z = along ? 18 + (i % 6) * 2 : lane * 18 + ((i * 5) % 7) - 3;
-      if (Math.abs(x) > 130 || Math.abs(z) > 130) continue;
-      if (Math.hypot(x, z) < 26) continue;
-      if (this.tooCloseToStructure(x, z, 6, items)) continue;
+    for (let i = 0; i < 24; i++) {
+      const alongNS = i % 2 === 0;
+      const lane = ((i / 2) | 0) - 5;
+      const x = alongNS ? lane * grid + 6 : (lane * grid);
+      const z = alongNS ? (lane % 5) * grid + 8 : lane * grid + 6;
+      if (Math.abs(x) > 125 || Math.abs(z) > 125) continue;
+      if (Math.hypot(x, z) < 28) continue;
+      if (this.tooCloseToStructure(x, z, 5, items)) continue;
       carSpawns.push({
         model: carModels[i % carModels.length],
         x,
         z,
-        w: 4.4,
-        h: 1.7,
-        d: 2.2,
-        rotY: along ? Math.PI / 2 : 0,
-        color: ["#c44", "#e8c547", "#2a5caa", "#888", "#d22"][i % 5],
+        w: 4.2,
+        h: 1.55,
+        d: 2.0,
+        rotY: alongNS ? 0 : Math.PI / 2,
+        color: ["#d64545", "#f0c418", "#2a5caa", "#6b7280", "#c0392b"][i % 5],
       });
     }
 
@@ -620,7 +622,7 @@ export class GameRoom {
     }
 
     this.layout.structures = items;
-    this.layoutKey += `|city:${items.length}:b${items.filter((s) => s.kind === "building").length}:v${carSpawns.length}:r${items.filter((s) => s.kind === "road").length}`;
+    this.layoutKey += `|city2:${items.length}:b${items.filter((s) => s.kind === "building").length}:v${carSpawns.length}:r${items.filter((s) => s.kind === "road").length}`;
 
     for (const s of items) {
       if (s.kind === "building") {
@@ -665,15 +667,15 @@ export class GameRoom {
     this.vehicles = [];
     for (const s of spawns || []) {
       const hw = (s.w || 4.2) * 0.5;
-      const hh = (s.h || 1.6) * 0.5;
-      const hd = (s.d || 2.1) * 0.5;
+      const hh = 0.42; // low collider — keeps body above asphalt
+      const hd = (s.d || 2.0) * 0.5;
       const body = new CANNON.Body({
-        mass: 120,
+        mass: 90,
         material: this.boxMat,
         shape: new CANNON.Box(new CANNON.Vec3(hw, hh, hd)),
-        position: new CANNON.Vec3(s.x, PLATFORM_TOP + hh + 0.02, s.z),
-        linearDamping: 0.35,
-        angularDamping: 0.95,
+        position: new CANNON.Vec3(s.x, PLATFORM_TOP + hh + 0.06, s.z),
+        linearDamping: 0.08,
+        angularDamping: 0.98,
         fixedRotation: true,
       });
       const yaw = s.rotY || 0;
@@ -683,12 +685,13 @@ export class GameRoom {
         kind: "vehicle",
         model: s.model || "BasicCar",
         color: s.color || "#c44",
-        sx: s.w || 4.4,
-        sy: s.h || 1.7,
-        sz: s.d || 2.2,
+        sx: s.w || 4.2,
+        sy: s.h || 1.55,
+        sz: s.d || 2.0,
         yaw,
         speed: 0,
         driverId: null,
+        rideY: PLATFORM_TOP + hh + 0.06,
       };
       this.world.addBody(body);
       this.vehicles.push(body);
@@ -2053,13 +2056,14 @@ export class GameRoom {
     let speed = v.userData.speed || 0;
     const throttle = p.input.mz || 0;
     const steer = -(p.input.mx || 0);
-    const maxSpd = p.input.sprint ? 36 : 26;
-    if (throttle > 0.08) speed = this.approach(speed, maxSpd * throttle, 32 * dt);
-    else if (throttle < -0.08) speed = this.approach(speed, -maxSpd * 0.42 * Math.abs(throttle), 38 * dt);
-    else speed = this.approach(speed, 0, 24 * dt);
+    // Faster than sprint run (~15) — cars feel quick
+    const maxSpd = p.input.sprint ? 62 : 46;
+    if (throttle > 0.08) speed = this.approach(speed, maxSpd * throttle, 78 * dt);
+    else if (throttle < -0.08) speed = this.approach(speed, -maxSpd * 0.4 * Math.abs(throttle), 70 * dt);
+    else speed = this.approach(speed, 0, 36 * dt);
 
-    if (Math.abs(speed) > 0.6) {
-      const turn = steer * dt * (2.4 * Math.min(1.15, Math.abs(speed) / 10)) * Math.sign(speed);
+    if (Math.abs(speed) > 0.5) {
+      const turn = steer * dt * (2.8 * Math.min(1.25, Math.abs(speed) / 9)) * Math.sign(speed);
       v.userData.yaw = (v.userData.yaw || 0) + turn;
     }
     const yaw = v.userData.yaw || 0;
@@ -2067,16 +2071,16 @@ export class GameRoom {
     const fz = -Math.cos(yaw);
     v.velocity.x = fx * speed;
     v.velocity.z = fz * speed;
-    if (v.position.y < PLATFORM_TOP + (v.userData.sy || 1.7) * 0.5 + 0.05) {
-      v.velocity.y = Math.max(v.velocity.y, 0);
-    }
+    v.velocity.y = 0;
+    const rideY = v.userData.rideY ?? PLATFORM_TOP + 0.5;
+    v.position.y = rideY;
     v.quaternion.setFromEuler(0, yaw, 0);
     v.userData.speed = speed;
     v.wakeUp();
 
-    // Seat lock (pre-physics; re-applied after step)
-    p.body.position.set(v.position.x, v.position.y + 0.35, v.position.z);
-    p.body.velocity.set(v.velocity.x, v.velocity.y, v.velocity.z);
+    // Driver seated — camera follows this height
+    p.body.position.set(v.position.x, rideY + 0.55, v.position.z);
+    p.body.velocity.set(v.velocity.x, 0, v.velocity.z);
     p.yaw = yaw;
   }
 
@@ -2089,8 +2093,11 @@ export class GameRoom {
         p.body.collisionResponse = true;
         continue;
       }
-      p.body.position.set(v.position.x, v.position.y + 0.35, v.position.z);
-      p.body.velocity.set(v.velocity.x, v.velocity.y, v.velocity.z);
+      const rideY = v.userData.rideY ?? PLATFORM_TOP + 0.5;
+      v.position.y = rideY;
+      v.velocity.y = 0;
+      p.body.position.set(v.position.x, rideY + 0.55, v.position.z);
+      p.body.velocity.set(v.velocity.x, 0, v.velocity.z);
     }
   }
 
@@ -2098,11 +2105,14 @@ export class GameRoom {
     for (const v of this.vehicles || []) {
       if (v.userData.driverId) continue;
       let speed = v.userData.speed || 0;
-      speed = this.approach(speed, 0, 16 * dt);
+      speed = this.approach(speed, 0, 22 * dt);
       v.userData.speed = speed;
       const yaw = v.userData.yaw || 0;
       v.velocity.x = -Math.sin(yaw) * speed;
       v.velocity.z = -Math.cos(yaw) * speed;
+      v.velocity.y = 0;
+      const rideY = v.userData.rideY ?? PLATFORM_TOP + 0.5;
+      v.position.y = rideY;
       v.quaternion.setFromEuler(0, yaw, 0);
     }
   }

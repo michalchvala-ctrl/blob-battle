@@ -278,7 +278,7 @@ socket.on("st", (st) => {
   if ($("hint-bar")) {
     $("hint-bar").textContent = gunsOn
       ? world.inVehicle
-        ? "Auto: WASD jazda · Shift turbo · E vystúp"
+        ? "Auto: WASD jazda · Shift turbo · E vystúp · pohľad z kabíny"
         : "1 nôž · 2 pištoľ · 3 odstrel. · E auto · G dym · Shift beh"
       : "WASD · skok · klik úder · Shift beh · Esc uvoľní myš";
   }

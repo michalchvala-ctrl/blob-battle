@@ -589,11 +589,11 @@ export class GameWorld {
       const d = s.d || 10;
       if (proto) {
         const model = proto.clone(true);
-        this.fitGltfToBox(model, w, 0.35, d, { uniform: false });
-        model.position.y += 0.62;
+        this.fitGltfToBox(model, w, 0.12, d, { uniform: false });
+        model.position.y += 0.585;
         g.add(model);
       } else {
-        const asphalt = new THREE.Mesh(new THREE.BoxGeometry(w, 0.12, d), toon("#2b2f36"));
+        const asphalt = new THREE.Mesh(new THREE.BoxGeometry(w, 0.08, d), toon("#2b2f36"));
         asphalt.position.y = 0.62;
         g.add(asphalt);
       }
@@ -1242,23 +1242,47 @@ export class GameWorld {
     const g = new THREE.Group();
     const modelId = d.model || CAR_MODELS[0];
     const proto = this.gltfCache.get(`car:${modelId}`);
-    const w = d.sx || 4.4;
-    const h = d.sy || 1.7;
-    const depth = d.sz || 2.2;
+    const w = d.sx || 4.2;
+    const h = d.sy || 1.55;
+    const depth = d.sz || 2.0;
+    const bodyColor = d.color || "#d64545";
     if (proto) {
       const model = proto.clone(true);
       this.fitGltfToBox(model, w, h, depth, { uniform: true });
-      model.position.y = -h * 0.5;
+      // Physics y is collider center (~0.48 above pad); pin visual bottom near asphalt
+      model.position.y = -0.42;
+      this.paintVehicleModel(model, bodyColor);
       g.add(model);
     } else {
-      const body = new THREE.Mesh(new THREE.BoxGeometry(w, h * 0.55, depth), toon(d.color || "#c44"));
-      body.position.y = -h * 0.15;
-      g.add(body);
+      const body = new THREE.Mesh(new THREE.BoxGeometry(w, h * 0.55, depth), toon(bodyColor));
+      body.position.y = 0.15;
+      const cabin = new THREE.Mesh(new THREE.BoxGeometry(w * 0.55, h * 0.35, depth * 0.7), toon("#88c8e8", { transparent: true, opacity: 0.5 }));
+      cabin.position.set(0, 0.55, -0.1);
+      g.add(body, cabin);
     }
     g.userData.isVehicle = true;
+    g.userData.bodyColor = bodyColor;
     g.position.set(d.x, d.y, d.z);
     g.quaternion.set(d.qx || 0, d.qy || 0, d.qz || 0, d.qw ?? 1);
     return g;
+  }
+
+  paintVehicleModel(model, bodyColor) {
+    model.traverse((o) => {
+      if (!o.isMesh) return;
+      const n = `${o.name || ""}`.toLowerCase();
+      let col = bodyColor;
+      if (n.includes("wheel") || n.includes("tire")) col = "#1a1a1a";
+      else if (n.includes("glass") || n.includes("window") || n.includes("windshield")) {
+        o.material = toon("#8ec8e8", { transparent: true, opacity: 0.42 });
+        o.castShadow = true;
+        return;
+      } else if (n.includes("light") || n.includes("lamp")) col = "#ffe566";
+      else if (n.includes("chrome") || n.includes("bumper")) col = "#b0b8c4";
+      o.material = toon(col);
+      o.castShadow = true;
+      o.receiveShadow = true;
+    });
   }
 
   syncBoxes(list) {
@@ -1596,7 +1620,9 @@ export class GameWorld {
         } else {
           mesh.quaternion.slerp(new THREE.Quaternion(d.qx, d.qy, d.qz, d.qw), dk);
         }
-        mesh.visible = d.y > -20;
+        // Hide own car shell while driving so cabin FPS doesn't clip through body
+        const drivingSelf = d.kind === "vehicle" && d.driverId && d.driverId === this.localId;
+        mesh.visible = d.y > -20 && !drivingSelf;
       }
     }
     if (this.shardMeshes?.size) {
@@ -2061,8 +2087,9 @@ export class GameWorld {
   }
 
   followLocal(pos) {
-    // First-person: camera in the head, look with full yaw/pitch
-    const eyeY = 0.52;
+    // First-person: on foot = head; in car = cabin interior
+    const inCar = !!this.inVehicle;
+    const eyeY = inCar ? 0.72 : 0.52;
     const pitch = this.pitch;
     const yaw = this.yaw;
     const desired = new THREE.Vector3(pos.x, pos.y + eyeY, pos.z);
@@ -2079,6 +2106,29 @@ export class GameWorld {
     this.camera.lookAt(lx, ly, lz);
     this.updateSunFollow(pos.x, pos.z);
     this.updateFpsGun();
+    this.updateCarInterior();
+  }
+
+  updateCarInterior() {
+    if (!this.fpsDash) {
+      const dash = new THREE.Group();
+      const mat = toon("#1e2430");
+      const panel = new THREE.Mesh(new THREE.BoxGeometry(0.9, 0.22, 0.28), mat);
+      panel.position.set(0, -0.32, -0.55);
+      const wheel = new THREE.Mesh(new THREE.TorusGeometry(0.14, 0.025, 8, 16), toon("#111"));
+      wheel.position.set(-0.12, -0.22, -0.48);
+      wheel.rotation.x = 0.35;
+      const glass = new THREE.Mesh(
+        new THREE.PlaneGeometry(1.4, 0.55),
+        new THREE.MeshBasicMaterial({ color: "#a8d8ff", transparent: true, opacity: 0.12, depthWrite: false }),
+      );
+      glass.position.set(0, 0.08, -0.72);
+      dash.add(panel, wheel, glass);
+      dash.visible = false;
+      this.camera.add(dash);
+      this.fpsDash = dash;
+    }
+    this.fpsDash.visible = !!this.inVehicle && !!this.gunsMode && !this.spectating;
   }
 
   updateFpsGun() {
