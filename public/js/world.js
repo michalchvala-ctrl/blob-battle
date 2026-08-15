@@ -1044,7 +1044,7 @@ export class GameWorld {
       return;
     }
     this.yaw -= dx * 0.0024;
-    this.pitch = THREE.MathUtils.clamp(this.pitch + dy * 0.0022, -1.52, 1.52);
+    this.pitch = THREE.MathUtils.clamp(this.pitch - dy * 0.0022, -1.52, 1.52);
   }
 
   zoom(deltaY) {
