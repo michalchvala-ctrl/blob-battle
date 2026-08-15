@@ -68,6 +68,25 @@ export function createJelly(color, name) {
   const armR = armL.clone();
   armL.position.set(-0.72, -0.05, 0.1);
   armR.position.set(0.72, -0.05, 0.1);
+
+  // Boxy blaster held in right hand (shown in Streľba mode)
+  const gun = new THREE.Group();
+  const gunMat = toon("#3d4454");
+  const gunAccent = toon("#d6ff4a");
+  const grip = new THREE.Mesh(new THREE.BoxGeometry(0.16, 0.32, 0.18), gunMat);
+  grip.position.set(0, -0.12, 0);
+  const bodyG = new THREE.Mesh(new THREE.BoxGeometry(0.22, 0.2, 0.55), gunMat);
+  bodyG.position.set(0, 0.06, 0.22);
+  const barrel = new THREE.Mesh(new THREE.BoxGeometry(0.12, 0.12, 0.45), toon("#2a303c"));
+  barrel.position.set(0, 0.08, 0.58);
+  const sight = new THREE.Mesh(new THREE.BoxGeometry(0.06, 0.1, 0.1), gunAccent);
+  sight.position.set(0, 0.2, 0.15);
+  gun.add(grip, bodyG, barrel, sight);
+  gun.position.set(0.15, -0.05, 0.35);
+  gun.rotation.set(-0.15, 0, -0.2);
+  gun.visible = false;
+  armR.add(gun);
+
   const back = new THREE.Mesh(new THREE.SphereGeometry(0.32, 10, 8), mat);
   back.position.set(0, -0.12, -0.52);
   body.add(belly, bum, eyeL, eyeR, pL, pR, mouth, armL, armR, back);
@@ -90,6 +109,7 @@ export function createJelly(color, name) {
     body,
     armL,
     armR,
+    gun,
     mouth,
     pL,
     pR,
@@ -171,6 +191,7 @@ export class GameWorld {
     this.followId = null;
     this.spectating = false;
     this.wasSpectating = false;
+    this.gunsMode = false;
     this.dummies = [];
     this.spawnDummies();
     this.resize();
@@ -984,10 +1005,29 @@ export class GameWorld {
       ud.body.scale.y = THREE.MathUtils.lerp(ud.body.scale.y, targetSy, 0.28);
       ud.body.scale.x = THREE.MathUtils.lerp(ud.body.scale.x, targetSx, 0.28);
       ud.body.scale.z = THREE.MathUtils.lerp(ud.body.scale.z, targetSz, 0.28);
-      ud.armL.rotation.x = p.punch ? -0.4 : -wobble * 0.9;
-      ud.armL.rotation.z = p.punch ? 0.9 : 0.15 + wobble * 0.2;
-      ud.armR.rotation.x = p.punch ? -1.1 : wobble * 0.9;
-      ud.armR.rotation.z = p.punch ? -1.3 : -0.15 - wobble * 0.2;
+
+      const guns = this.gunsMode && p.alive;
+      if (ud.gun) ud.gun.visible = guns;
+      if (guns) {
+        // Aim pose — right arm forward with blaster
+        const kick = p.shoot ? -0.55 : -0.25;
+        ud.armR.rotation.x = kick;
+        ud.armR.rotation.z = -0.35;
+        ud.armR.rotation.y = -0.15;
+        ud.armL.rotation.x = -0.2;
+        ud.armL.rotation.z = 0.35;
+        if (ud.gun) {
+          ud.gun.rotation.x = p.shoot ? -0.35 : -0.1;
+          ud.gun.position.z = p.shoot ? 0.28 : 0.35;
+        }
+      } else {
+        ud.armL.rotation.x = p.punch ? -0.4 : -wobble * 0.9;
+        ud.armL.rotation.z = p.punch ? 0.9 : 0.15 + wobble * 0.2;
+        ud.armL.rotation.y = 0;
+        ud.armR.rotation.x = p.punch ? -1.1 : wobble * 0.9;
+        ud.armR.rotation.z = p.punch ? -1.3 : -0.15 - wobble * 0.2;
+        ud.armR.rotation.y = 0;
+      }
       ud.bomb.visible = false;
 
       // Pin shadow to platform surface (stable; no flicker when y dips)

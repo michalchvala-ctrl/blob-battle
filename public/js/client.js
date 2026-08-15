@@ -189,6 +189,7 @@ socket.on("round", (r) => {
   show($("hud"), true);
   $("you-dead").classList.add("hidden");
   $("mode-pill").textContent = MODE_LABEL[r.mode] || r.mode;
+  world.gunsMode = r.mode === "guns";
   syncArenaVisual(r);
   world.setBomb(r.bombId);
   lastBombT = r.bombT;
@@ -227,6 +228,7 @@ socket.on("st", (st) => {
   $("alive-pill").textContent = `${aliveN} v hre`;
 
   const gunsOn = st.mode === "guns" && st.phase === "playing";
+  world.gunsMode = st.mode === "guns";
   $("hp-wrap").classList.toggle("hidden", !gunsOn || !me?.alive);
   if (gunsOn && me) {
     const hp = Math.max(0, me.hp ?? 100);
@@ -305,6 +307,7 @@ function applyLobby(data) {
     }
   }
   $("mode-pill").textContent = MODE_LABEL[data.mode] || data.mode;
+  world.gunsMode = data.mode === "guns";
 }
 
 function handleEvent(ev) {
