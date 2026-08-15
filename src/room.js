@@ -267,7 +267,7 @@ export class GameRoom {
     );
     this.world.addContactMaterial(
       new CANNON.ContactMaterial(this.goatMat, this.groundMat, {
-        friction: 0.85,
+        friction: 0.05,
         restitution: 0.02,
       }),
     );
@@ -682,7 +682,7 @@ export class GameRoom {
       material: this.goatMat,
       shape: new CANNON.Box(new CANNON.Vec3(hx, hy, hz)),
       position: new CANNON.Vec3(x, y, z),
-      linearDamping: 0.18,
+      linearDamping: 0.04,
       angularDamping: 0.95,
       fixedRotation: true,
     });
@@ -811,8 +811,9 @@ export class GameRoom {
         wishZ = -Math.cos(ud.yaw || 0);
       }
       const sprint = tx != null && best < chaseRange;
-      const walkSpeed = sprint ? 19.5 : 12;
-      const accel = sprint ? 55 : 28;
+      // Same top speed as players (grounded 9.2 / air 10.5)
+      const walkSpeed = sprint ? 10.5 : 9.2;
+      const accel = sprint ? 70 : 55;
       g.velocity.x = this.approach(g.velocity.x, wishX * walkSpeed, accel * dt);
       g.velocity.z = this.approach(g.velocity.z, wishZ * walkSpeed, accel * dt);
       // kill ball-bounce on landing
