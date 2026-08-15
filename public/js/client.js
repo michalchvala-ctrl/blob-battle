@@ -249,8 +249,8 @@ socket.on("st", (st) => {
   }
   if ($("hint-bar")) {
     $("hint-bar").textContent = gunsOn
-      ? "WASD · skok · klik STREĽBA · G granát (drž) · Shift dash · reset po 30 zabitiach"
-      : "WASD chôdza · koliesko zoom · skok · klik úder · Shift dash · Esc uvoľní myš";
+      ? "WASD · skok · klik STREĽBA · G granát · Shift beh · pohľad 1. osoba · reset po 30 zabitiach"
+      : "WASD · skok · klik úder · Shift beh · pohľad 1. osoba · Esc uvoľní myš";
   }
 
   if (st.phase === "playing" && me && !me.alive) {
@@ -364,6 +364,11 @@ function handleEvent(ev) {
     text = `${ev.by} trafil ${ev.victim} (${ev.hp}%)`;
     sfx.punch();
     world.addShake(0.25);
+    const pos =
+      ev.x != null
+        ? { x: ev.x, y: ev.y, z: ev.z }
+        : world.players.get(ev.id)?.mesh?.position;
+    if (pos) world.spawnBlood?.(pos);
   } else if (ev.type === "kill") {
     text = ev.by ? `${ev.by} zostrelil ${ev.victim}` : `${ev.victim} vypadol`;
     sfx.fall();
@@ -406,10 +411,6 @@ window.addEventListener("keydown", (e) => {
   if (e.code === "KeyG" && world.gunsMode && playing && !world.spectating && !e.repeat) {
     grenadeHolding = true;
     grenadeHoldStart = performance.now();
-  }
-  if (e.code === "ShiftLeft" || e.code === "ShiftRight") {
-    dashQueued = true;
-    if (playing) sfx.dash();
   }
 });
 window.addEventListener("keyup", (e) => {
@@ -481,7 +482,8 @@ setInterval(() => {
     jump: jumpQueued,
     punch: punchQueued,
     shoot: punchQueued,
-    dash: dashQueued,
+    dash: false,
+    sprint: !!(keys.ShiftLeft || keys.ShiftRight),
     grenade: grenadeQueued,
     grenadeCharge: grenadeCharge,
   });

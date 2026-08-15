@@ -137,6 +137,7 @@ export class GameWorld {
 
     this.camera = new THREE.PerspectiveCamera(70, 1, 0.25, 220);
     this.camera.position.set(18, 14, 18);
+    this.scene.add(this.camera);
     this.yaw = 0;
     this.pitch = 0.14;
     this.camDist = 6.8;
@@ -1043,7 +1044,7 @@ export class GameWorld {
       return;
     }
     this.yaw -= dx * 0.0024;
-    this.pitch = THREE.MathUtils.clamp(this.pitch + dy * 0.0022, -0.2, 0.62);
+    this.pitch = THREE.MathUtils.clamp(this.pitch + dy * 0.0022, -1.52, 1.52);
   }
 
   zoom(deltaY) {
@@ -1160,7 +1161,9 @@ export class GameWorld {
       m.rotation.y = faceYaw + Math.PI;
       m.rotation.x = 0;
       m.rotation.z = 0;
-      m.visible = p.y > -20;
+      // First-person: hide own body while alive
+      const hideSelf = local && p.alive && !this.spectating;
+      m.visible = p.y > -20 && !hideSelf;
       const ud = m.userData;
       ud.label.visible = !local && !this.gunsMode && !!p.alive;
       const spd = Math.hypot(p.vx, p.vz);
@@ -1276,7 +1279,69 @@ export class GameWorld {
       this.camera.position.y += (Math.random() - 0.5) * this.shake * 0.6;
       this.shake *= 0.86;
     }
+    this.updateBlood(dt);
     this.renderer.render(this.scene, this.camera);
+  }
+
+  spawnBlood(pos, amount = 16) {
+    if (!this.blood) this.blood = [];
+    const PLATFORM_TOP = 0.575;
+    for (let i = 0; i < amount; i++) {
+      const r = 0.04 + Math.random() * 0.07;
+      const mesh = new THREE.Mesh(
+        new THREE.SphereGeometry(r, 6, 5),
+        new THREE.MeshBasicMaterial({ color: i % 3 === 0 ? "#8b0000" : "#c41e3a" }),
+      );
+      mesh.position.set(
+        pos.x + (Math.random() - 0.5) * 0.45,
+        pos.y + 0.2 + Math.random() * 0.55,
+        pos.z + (Math.random() - 0.5) * 0.45,
+      );
+      this.scene.add(mesh);
+      this.blood.push({
+        mesh,
+        vx: (Math.random() - 0.5) * 3.5,
+        vy: 1.2 + Math.random() * 3.5,
+        vz: (Math.random() - 0.5) * 3.5,
+        life: 4 + Math.random() * 3,
+        floorY: PLATFORM_TOP + 0.03,
+        settled: false,
+      });
+    }
+  }
+
+  updateBlood(dt) {
+    if (!this.blood?.length) return;
+    for (let i = this.blood.length - 1; i >= 0; i--) {
+      const b = this.blood[i];
+      b.life -= dt;
+      if (b.life <= 0) {
+        this.scene.remove(b.mesh);
+        b.mesh.geometry.dispose();
+        b.mesh.material.dispose();
+        this.blood.splice(i, 1);
+        continue;
+      }
+      if (b.settled) {
+        b.mesh.material.opacity = Math.min(1, b.life * 0.35);
+        b.mesh.material.transparent = true;
+        continue;
+      }
+      b.vy -= 28 * dt;
+      b.mesh.position.x += b.vx * dt;
+      b.mesh.position.y += b.vy * dt;
+      b.mesh.position.z += b.vz * dt;
+      if (b.mesh.position.y <= b.floorY) {
+        b.mesh.position.y = b.floorY;
+        b.vx *= 0.2;
+        b.vz *= 0.2;
+        b.vy = 0;
+        b.settled = true;
+        // Flatten into a puddle stain
+        b.mesh.scale.set(1.8, 0.25, 1.8);
+        b.mesh.material.color.set("#6b0f1a");
+      }
+    }
   }
 
   setBomb(id) {
@@ -1303,23 +1368,46 @@ export class GameWorld {
   }
 
   followLocal(pos) {
-    // Orbit purely from mouse yaw/pitch; look at body center — no mesh rotation coupling.
-    const dist = this.camDist;
+    // First-person: camera in the head, look with full yaw/pitch
+    const eyeY = 0.52;
     const pitch = this.pitch;
     const yaw = this.yaw;
-    const ox = Math.sin(yaw) * Math.cos(pitch) * dist;
-    const oy = Math.sin(pitch) * dist + this.camHeight;
-    const oz = Math.cos(yaw) * Math.cos(pitch) * dist;
-    const desired = new THREE.Vector3(pos.x + ox, pos.y + oy, pos.z + oz);
+    const desired = new THREE.Vector3(pos.x, pos.y + eyeY, pos.z);
     if (this.snapCam) {
       this.camera.position.copy(desired);
       this.snapCam = false;
     } else {
-      // High follow so mouse turn feels locked to yaw; still soft enough to avoid jitter.
-      this.camera.position.lerp(desired, 0.88);
+      this.camera.position.lerp(desired, 0.92);
     }
-    this.camera.lookAt(pos.x, pos.y + 0.95, pos.z);
+    const lookDist = 12;
+    const lx = pos.x + -Math.sin(yaw) * Math.cos(pitch) * lookDist;
+    const ly = pos.y + eyeY + Math.sin(pitch) * lookDist;
+    const lz = pos.z + -Math.cos(yaw) * Math.cos(pitch) * lookDist;
+    this.camera.lookAt(lx, ly, lz);
     this.updateSunFollow(pos.x, pos.z);
+    this.updateFpsGun();
+  }
+
+  updateFpsGun() {
+    if (!this.fpsGun) {
+      const gun = new THREE.Group();
+      const mat = toon("#3d4454");
+      const accent = toon("#d6ff4a");
+      const grip = new THREE.Mesh(new THREE.BoxGeometry(0.08, 0.16, 0.09), mat);
+      grip.position.set(0, -0.08, 0);
+      const body = new THREE.Mesh(new THREE.BoxGeometry(0.11, 0.1, 0.28), mat);
+      body.position.set(0, 0.02, 0.12);
+      const barrel = new THREE.Mesh(new THREE.BoxGeometry(0.06, 0.06, 0.22), toon("#2a303c"));
+      barrel.position.set(0, 0.03, 0.3);
+      const sight = new THREE.Mesh(new THREE.BoxGeometry(0.03, 0.05, 0.05), accent);
+      sight.position.set(0, 0.1, 0.08);
+      gun.add(grip, body, barrel, sight);
+      this.camera.add(gun);
+      this.fpsGun = gun;
+    }
+    this.fpsGun.visible = !!this.gunsMode && !this.spectating;
+    this.fpsGun.position.set(0.22, -0.18, -0.42);
+    this.fpsGun.rotation.set(0.05, 0.08, 0.12);
   }
 
   updateSunFollow(x, z) {

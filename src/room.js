@@ -1062,7 +1062,7 @@ export class GameRoom {
       color: this.colorForIndex(index),
       body,
       alive: true,
-      input: { mx: 0, mz: 0, yaw: 0, pitch: 0, jump: false, punch: false, dash: false, shoot: false, grenade: false, grenadeCharge: 0 },
+      input: { mx: 0, mz: 0, yaw: 0, pitch: 0, jump: false, punch: false, dash: false, sprint: false, shoot: false, grenade: false, grenadeCharge: 0 },
       jumpHeld: false,
       punchCd: 0,
       shootCd: 0,
@@ -1109,11 +1109,12 @@ export class GameRoom {
     p.input.mx = clamp(Number(data.mx) || 0, -1, 1);
     p.input.mz = clamp(Number(data.mz) || 0, -1, 1);
     p.input.yaw = Number(data.yaw) || 0;
-    p.input.pitch = clamp(Number(data.pitch) || 0, -0.85, 1.15);
+    p.input.pitch = clamp(Number(data.pitch) || 0, -1.52, 1.52);
     p.yaw = p.input.yaw;
     if (data.jump) p.input.jump = true;
     if (data.punch) p.input.punch = true;
     if (data.dash) p.input.dash = true;
+    p.input.sprint = !!data.sprint;
     if (data.shoot) p.input.shoot = true;
     if (data.grenade) {
       p.input.grenade = true;
@@ -1451,8 +1452,9 @@ export class GameRoom {
     wish.vadd(right.scale(p.input.mx, new CANNON.Vec3()), wish);
     if (wish.length() > 1) wish.normalize();
 
-    const max = grounded ? 9.2 : 10.5;
-    const accel = grounded ? 70 : 22;
+    const sprint = !!p.input.sprint;
+    const max = grounded ? (sprint ? 15.2 : 9.2) : sprint ? 16.2 : 10.5;
+    const accel = grounded ? (sprint ? 85 : 70) : 22;
     const brake = grounded ? 90 : 12;
     const hasWish = wish.length() > 0.05;
     const tx = hasWish ? wish.x * max : 0;
@@ -1471,18 +1473,12 @@ export class GameRoom {
     p.jumpHeld = !!p.input.jump;
     p.input.jump = false;
 
-    if (p.input.dash && p.dashCd <= 0) {
-      const dir = hasWish ? wish : fwd;
-      body.velocity.x += dir.x * 12;
-      body.velocity.z += dir.z * 12;
-      body.velocity.y += 1.6;
-      p.dashCd = 1.35;
-    }
+    // Legacy dash pulse removed — Shift is hold-to-sprint
     p.input.dash = false;
 
     if (this.mode === "guns") {
       if ((p.input.shoot || p.input.punch) && p.shootCd <= 0 && p.alive) {
-        this.doShoot(p, fwd);
+        this.doShoot(p);
         p.shootCd = 0.38;
         p.shootFlash = 0.12;
       }
@@ -1508,7 +1504,7 @@ export class GameRoom {
   throwGrenade(p, charge, pitch) {
     const c = clamp(charge, 0.12, 1);
     const yaw = p.input.yaw || p.yaw || 0;
-    const pit = clamp(pitch, -0.75, 1.05);
+    const pit = clamp(pitch, -1.52, 1.52);
     const cosP = Math.cos(pit);
     const sinP = Math.sin(pit);
     const fx = -Math.sin(yaw) * cosP;
@@ -1618,13 +1614,18 @@ export class GameRoom {
     }
   }
 
-  doShoot(p, fwd) {
+  doShoot(p) {
     const origin = p.body.position;
     const ox = origin.x;
     const oy = origin.y + 0.35;
     const oz = origin.z;
-    const fx = fwd.x;
-    const fz = fwd.z;
+    const yaw = p.input.yaw || p.yaw || 0;
+    const pitch = clamp(p.input.pitch || 0, -1.52, 1.52);
+    const cosP = Math.cos(pitch);
+    const sinP = Math.sin(pitch);
+    const fx = -Math.sin(yaw) * cosP;
+    const fy = sinP;
+    const fz = -Math.cos(yaw) * cosP;
     // ~50% slower than the previous ~180 u/s hitscan-feel beam
     const speed = 90;
     const range = Math.max(90, Math.min(240, this.platformRadius * 1.15));
@@ -1636,7 +1637,7 @@ export class GameRoom {
       y: oy,
       z: oz,
       vx: fx * speed,
-      vy: 0,
+      vy: fy * speed,
       vz: fz * speed,
       speed,
       life: range / speed,
@@ -1650,7 +1651,7 @@ export class GameRoom {
       y0: oy,
       z0: oz,
       dx: fx,
-      dy: 0,
+      dy: fy,
       dz: fz,
       speed,
       range,
@@ -1669,6 +1670,7 @@ export class GameRoom {
       const oy = b.y;
       const oz = b.z;
       const fx = b.vx / b.speed;
+      const fy = b.vy / b.speed;
       const fz = b.vz / b.speed;
       let hitT = dist;
       let hitPlayer = null;
@@ -1679,11 +1681,12 @@ export class GameRoom {
         const dx = o.body.position.x - ox;
         const dy = o.body.position.y - oy;
         const dz = o.body.position.z - oz;
-        const t = dx * fx + dy * 0 + dz * fz;
+        const t = dx * fx + dy * fy + dz * fz;
         if (t < 0 || t > hitT) continue;
         const px = ox + fx * t;
+        const py = oy + fy * t;
         const pz = oz + fz * t;
-        const rad = Math.hypot(px - o.body.position.x, (oy - o.body.position.y) * 0.35, pz - o.body.position.z);
+        const rad = Math.hypot(px - o.body.position.x, py - o.body.position.y, pz - o.body.position.z);
         if (rad < 1.15) {
           hitPlayer = o;
           hitT = t;
@@ -1691,7 +1694,7 @@ export class GameRoom {
       }
       for (const body of props) {
         if (body.userData?.kind === "medkit") continue;
-        const t = this.raycastBody(ox, oy, oz, fx, 0, fz, body, hitT);
+        const t = this.raycastBody(ox, oy, oz, fx, fy, fz, body, hitT);
         if (t == null || t >= hitT) continue;
         hitT = t;
         hitProp = body;
@@ -1700,7 +1703,7 @@ export class GameRoom {
 
       if (hitPlayer || hitProp) {
         const ex = ox + fx * hitT;
-        const ey = oy;
+        const ey = oy + fy * hitT;
         const ez = oz + fz * hitT;
         this.events.push({
           type: "bulletHit",
@@ -1714,7 +1717,7 @@ export class GameRoom {
           const kick = 14 + Math.min(22, 80 / Math.max(4, hitProp.mass));
           hitProp.velocity.x += fx * kick;
           hitProp.velocity.z += fz * kick;
-          hitProp.velocity.y += 5.5;
+          hitProp.velocity.y += 5.5 + fy * 4;
           hitProp.angularVelocity.x += (Math.random() - 0.5) * 8;
           hitProp.angularVelocity.y += (Math.random() - 0.5) * 10;
           hitProp.angularVelocity.z += (Math.random() - 0.5) * 8;
@@ -1726,13 +1729,16 @@ export class GameRoom {
           hitPlayer.lastHitAt = this.roundT;
           hitPlayer.body.velocity.x += fx * 4.5;
           hitPlayer.body.velocity.z += fz * 4.5;
-          hitPlayer.body.velocity.y += 1.5;
+          hitPlayer.body.velocity.y += 1.5 + fy * 2;
           this.events.push({
             type: "hit",
             by: b.by || shooter?.name || "?",
             victim: hitPlayer.name,
             id: hitPlayer.id,
             hp: hitPlayer.hp,
+            x: hitPlayer.body.position.x,
+            y: hitPlayer.body.position.y,
+            z: hitPlayer.body.position.z,
           });
           if (hitPlayer.hp <= 0) this.kill(hitPlayer, "shot");
         }
