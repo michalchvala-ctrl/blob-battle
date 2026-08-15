@@ -197,6 +197,67 @@ button.ghost {
   margin-bottom: 14px;
 }
 
+.crosshair {
+  position: absolute;
+  left: 50%;
+  top: 50%;
+  width: 34px;
+  height: 34px;
+  transform: translate(-50%, -50%);
+  pointer-events: none;
+  z-index: 5;
+}
+
+.crosshair .ch-dot {
+  position: absolute;
+  left: 50%;
+  top: 50%;
+  width: 3px;
+  height: 3px;
+  margin: -1.5px 0 0 -1.5px;
+  border-radius: 50%;
+  background: #fff8e7;
+  box-shadow: 0 0 0 1px #120418cc;
+}
+
+.crosshair .ch-arm {
+  position: absolute;
+  background: #fff8e7;
+  box-shadow: 0 0 0 1px #120418cc;
+}
+
+.crosshair .ch-arm.t,
+.crosshair .ch-arm.b {
+  left: 50%;
+  width: 2px;
+  height: 9px;
+  margin-left: -1px;
+}
+
+.crosshair .ch-arm.t {
+  top: 0;
+}
+
+.crosshair .ch-arm.b {
+  bottom: 0;
+}
+
+.crosshair .ch-arm.l,
+.crosshair .ch-arm.r {
+  top: 50%;
+  width: 9px;
+  height: 2px;
+  margin-top: -1px;
+}
+
+.crosshair .ch-arm.l {
+  left: 0;
+}
+
+.crosshair .ch-arm.r {
+  right: 0;
+}
+
 .hp-wrap {
   position: absolute;
   left: 50%;

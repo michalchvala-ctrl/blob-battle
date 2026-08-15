@@ -229,7 +229,9 @@ socket.on("st", (st) => {
 
   const gunsOn = st.mode === "guns" && st.phase === "playing";
   world.gunsMode = st.mode === "guns";
-  $("hp-wrap").classList.toggle("hidden", !gunsOn || !me?.alive);
+  const showGunsHud = gunsOn && !!me?.alive;
+  $("hp-wrap").classList.toggle("hidden", !showGunsHud);
+  $("crosshair").classList.toggle("hidden", !showGunsHud);
   if (gunsOn && me) {
     const hp = Math.max(0, me.hp ?? 100);
     $("hp-fill").style.width = `${hp}%`;
