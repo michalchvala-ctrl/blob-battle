@@ -455,15 +455,16 @@ export class GameWorld {
   }
 
   makeGoatMesh(d) {
-    // Boxy LEGO-style goat with animated legs
-    const fur = d.color || "#c4a574";
-    const dark = "#4a3428";
-    const cream = "#efe2c8";
-    const g = new THREE.Group();
+    // Obvious Minecraft-style goat from boxes (head + body + 4 legs + horns)
+    const fur = "#c4a574";
+    const dark = "#5a3d2a";
+    const cream = "#f3ead4";
+    const black = "#1a1210";
+    const root = new THREE.Group();
     const legs = [];
 
-    const addBox = (w, h, dpth, color, x, y, z, parent = g) => {
-      const m = new THREE.Mesh(new THREE.BoxGeometry(w, h, dpth), toon(color));
+    const box = (w, h, dep, col, x, y, z, parent = root) => {
+      const m = new THREE.Mesh(new THREE.BoxGeometry(w, h, dep), toon(col));
       m.position.set(x, y, z);
       m.castShadow = true;
       m.receiveShadow = true;
@@ -471,58 +472,62 @@ export class GameWorld {
       return m;
     };
 
-    // torso
-    addBox(0.9, 0.7, 1.35, fur, 0, 0.35, 0);
-    addBox(0.75, 0.35, 1.0, "#d2b48c", 0, 0.05, 0.05);
-    // neck + head (facing +Z)
-    addBox(0.4, 0.45, 0.35, fur, 0, 0.7, 0.7);
-    addBox(0.55, 0.48, 0.55, fur, 0, 0.85, 1.0);
-    addBox(0.35, 0.22, 0.32, cream, 0, 0.7, 1.28);
-    // eyes
-    addBox(0.1, 0.1, 0.08, "#1a1020", -0.16, 0.95, 1.26);
-    addBox(0.1, 0.1, 0.08, "#1a1020", 0.16, 0.95, 1.26);
-    // ears
-    addBox(0.14, 0.22, 0.08, fur, -0.36, 1.05, 0.95);
-    addBox(0.14, 0.22, 0.08, fur, 0.36, 1.05, 0.95);
-    // horns (boxes)
-    const hornL = addBox(0.1, 0.42, 0.1, cream, -0.18, 1.25, 0.9);
-    hornL.rotation.z = 0.35;
-    hornL.rotation.x = -0.25;
-    const hornR = addBox(0.1, 0.42, 0.1, cream, 0.18, 1.25, 0.9);
-    hornR.rotation.z = -0.35;
-    hornR.rotation.x = -0.25;
-    // tail
-    addBox(0.12, 0.12, 0.28, dark, 0, 0.45, -0.78);
+    // Pivot at body center (matches physics box center). Face +Z.
+    // Body
+    box(1.1, 0.85, 1.6, fur, 0, 0.15, 0);
+    // Chest fluff
+    box(0.95, 0.4, 0.7, "#d7bc96", 0, -0.1, 0.35);
+    // Neck
+    box(0.45, 0.55, 0.4, fur, 0, 0.55, 0.85);
+    // Head
+    box(0.7, 0.6, 0.7, fur, 0, 0.85, 1.25);
+    // Snout
+    box(0.42, 0.28, 0.4, cream, 0, 0.7, 1.65);
+    // Eyes
+    box(0.12, 0.12, 0.1, black, -0.2, 0.98, 1.58);
+    box(0.12, 0.12, 0.1, black, 0.2, 0.98, 1.58);
+    // Ears
+    box(0.18, 0.28, 0.1, fur, -0.45, 1.1, 1.15);
+    box(0.18, 0.28, 0.1, fur, 0.45, 1.1, 1.15);
+    // Horns
+    const hL = box(0.14, 0.55, 0.14, cream, -0.22, 1.35, 1.1);
+    hL.rotation.set(-0.4, 0, 0.45);
+    const hR = box(0.14, 0.55, 0.14, cream, 0.22, 1.35, 1.1);
+    hR.rotation.set(-0.4, 0, -0.45);
+    // Beard
+    box(0.16, 0.35, 0.12, cream, 0, 0.45, 1.7);
+    // Tail
+    box(0.14, 0.14, 0.35, dark, 0, 0.35, -0.9);
 
-    // legs as groups so we can swing them
-    const legSpots = [
-      [-0.28, 0.38],
-      [0.28, 0.38],
-      [-0.28, -0.4],
-      [0.28, -0.4],
+    const spots = [
+      [-0.35, 0.45],
+      [0.35, 0.45],
+      [-0.35, -0.5],
+      [0.35, -0.5],
     ];
-    for (const [lx, lz] of legSpots) {
+    for (const [lx, lz] of spots) {
       const leg = new THREE.Group();
-      leg.position.set(lx, 0.05, lz);
-      const thigh = new THREE.Mesh(new THREE.BoxGeometry(0.18, 0.42, 0.18), toon(fur));
-      thigh.position.y = -0.2;
-      thigh.castShadow = true;
-      const shin = new THREE.Mesh(new THREE.BoxGeometry(0.14, 0.38, 0.14), toon(dark));
-      shin.position.y = -0.52;
-      shin.castShadow = true;
-      const hoof = new THREE.Mesh(new THREE.BoxGeometry(0.18, 0.1, 0.22), toon("#2a1c14"));
-      hoof.position.y = -0.74;
+      leg.position.set(lx, -0.15, lz);
+      const upper = new THREE.Mesh(new THREE.BoxGeometry(0.22, 0.5, 0.22), toon(fur));
+      upper.position.y = -0.2;
+      upper.castShadow = true;
+      const lower = new THREE.Mesh(new THREE.BoxGeometry(0.18, 0.45, 0.18), toon(dark));
+      lower.position.y = -0.6;
+      lower.castShadow = true;
+      const hoof = new THREE.Mesh(new THREE.BoxGeometry(0.22, 0.12, 0.26), toon(black));
+      hoof.position.y = -0.88;
       hoof.castShadow = true;
-      leg.add(thigh, shin, hoof);
-      g.add(leg);
+      leg.add(upper, lower, hoof);
+      root.add(leg);
       legs.push(leg);
     }
 
-    g.userData.legs = legs;
-    g.userData.isGoat = true;
-    g.position.set(d.x, d.y, d.z);
-    g.rotation.y = d.yaw ?? 0;
-    return g;
+    root.userData.legs = legs;
+    root.userData.isGoat = true;
+    root.userData.kind = "goat";
+    root.position.set(d.x || 0, d.y || 0, d.z || 0);
+    root.rotation.y = (d.yaw ?? 0) + Math.PI;
+    return root;
   }
 
   makeDebrisMesh(d) {
@@ -580,12 +585,20 @@ export class GameWorld {
     for (const d of list) {
       seen.add(d.id);
       let mesh = this.debrisMeshes.get(d.id);
+      const wantGoat = d.kind === "goat";
+      if (mesh && wantGoat && !mesh.userData.isGoat) {
+        this.props.remove(mesh);
+        mesh.geometry?.dispose?.();
+        this.debrisMeshes.delete(d.id);
+        mesh = null;
+      }
       if (!mesh) {
         mesh = this.makeDebrisMesh(d);
         this.props.add(mesh);
         this.debrisMeshes.set(d.id, mesh);
       }
       mesh.userData.t = d;
+      if (wantGoat) mesh.userData.isGoat = true;
     }
     for (const [id, mesh] of this.debrisMeshes) {
       if (!seen.has(id)) {
@@ -836,12 +849,12 @@ export class GameWorld {
         const d = mesh.userData.t;
         if (!d) continue;
         mesh.position.lerp(new THREE.Vector3(d.x, d.y, d.z), dk);
-        if (mesh.userData.isGoat) {
-          const yaw = (d.yaw ?? 0) + Math.PI;
-          mesh.rotation.set(0, yaw, 0);
+        if (mesh.userData.isGoat || d.kind === "goat") {
+          // Mesh faces +Z; yaw 0 = world -Z (player convention)
+          mesh.rotation.set(0, (d.yaw ?? 0) + Math.PI, 0);
           const spd = Math.hypot(d.vx || 0, d.vz || 0);
           const legs = mesh.userData.legs || [];
-          const swing = spd > 0.4 ? Math.sin(t * 9) * Math.min(0.85, spd * 0.22) : 0;
+          const swing = spd > 0.35 ? Math.sin(t * 10) * Math.min(1.0, spd * 0.28) : 0;
           legs.forEach((leg, i) => {
             leg.rotation.x = i % 2 === 0 ? swing : -swing;
           });

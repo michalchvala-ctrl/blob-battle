@@ -559,6 +559,8 @@ export class GameRoom {
       yaw: Math.random() * Math.PI * 2,
       chargeT: 0.6 + Math.random() * 1.2,
     };
+    // Cannon may not retain arbitrary fields on some paths — mirror on body
+    body.goat = true;
     this.world.addBody(body);
     this.goats.push(body);
     this.events.push({ type: "goat", id: body.userData.id });
@@ -1425,10 +1427,29 @@ export class GameRoom {
       qz: b.quaternion.z,
       qw: b.quaternion.w,
     }));
-    const debris = [...this.debris, ...this.goats].map((b) => ({
+    const debris = this.debris.map((b) => ({
       id: b.userData?.id ?? 0,
       kind: b.userData?.kind || "box",
       color: b.userData?.color || "#ff9e00",
+      sx: b.userData?.sx ?? 1,
+      sy: b.userData?.sy ?? 1,
+      sz: b.userData?.sz ?? 1,
+      x: b.position.x,
+      y: b.position.y,
+      z: b.position.z,
+      qx: b.quaternion.x,
+      qy: b.quaternion.y,
+      qz: b.quaternion.z,
+      qw: b.quaternion.w,
+      yaw: 0,
+      vx: b.velocity.x,
+      vy: b.velocity.y,
+      vz: b.velocity.z,
+    }));
+    const goats = this.goats.map((b) => ({
+      id: b.userData?.id ?? 0,
+      kind: "goat",
+      color: "#c4a574",
       sx: b.userData?.sx ?? 1,
       sy: b.userData?.sy ?? 1,
       sz: b.userData?.sz ?? 1,
@@ -1444,6 +1465,8 @@ export class GameRoom {
       vy: b.velocity.y,
       vz: b.velocity.z,
     }));
+    // Client still reads one debris list — merge goats with explicit kind
+    const debrisOut = [...debris, ...goats];
     const ev = this.events;
     this.events = [];
     return {
@@ -1460,7 +1483,7 @@ export class GameRoom {
       winnerName: this.winnerName,
       players,
       boxes,
-      debris,
+      debris: debrisOut,
       shards: this.shardSnapshot(),
       events: ev,
     };
