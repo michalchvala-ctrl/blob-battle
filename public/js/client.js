@@ -3,8 +3,6 @@ import { sfx } from "./audio.js";
 import { ARENA_INFO, ARENA_IDS } from "./arenas.js";
 
 const $ = (id) => document.getElementById(id);
-const socket = window.io({ transports: ["websocket", "polling"] });
-const world = new GameWorld($("view"));
 
 const nameInput = $("name");
 const codeInput = $("code");
@@ -31,6 +29,47 @@ function menuErr(msg) {
   $("menu-err").hidden = !msg;
   $("menu-err").textContent = msg || "";
 }
+
+if (!window.io) {
+  menuErr("Nepripojené na server — chýba Socket.io skript.");
+  throw new Error("Socket.io client missing");
+}
+
+// Same-origin (works on https://blobbattle… via reverse proxy).
+// Polling first + upgrade: if proxy blocks WebSocket, create/join still work over polling.
+const socket = window.io({
+  path: "/socket.io",
+  transports: ["polling", "websocket"],
+  upgrade: true,
+  reconnection: true,
+  reconnectionAttempts: Infinity,
+  timeout: 12000,
+});
+const world = new GameWorld($("view"));
+
+function requireSocket() {
+  if (socket.connected) return true;
+  menuErr("Nepripojené na server");
+  return false;
+}
+
+socket.on("connect", () => {
+  const t = $("menu-err").textContent || "";
+  if (t.startsWith("Nepripojené")) menuErr("");
+});
+
+socket.on("disconnect", () => {
+  if (!playing && !lobby) menuErr("Nepripojené na server");
+});
+
+socket.on("connect_error", (err) => {
+  console.error("Socket connect_error:", err?.message || err);
+  menuErr("Nepripojené na server");
+});
+
+setTimeout(() => {
+  if (!socket.connected && !lobby && !playing) menuErr("Nepripojené na server");
+}, 3000);
 
 function syncArenaVisual(data) {
   if (!data) return;
@@ -82,6 +121,7 @@ function returnToMenu() {
 $("btn-create").onclick = () => {
   sfx.unlock();
   sfx.click();
+  if (!requireSocket()) return;
   const name = nameInput.value.trim();
   localStorage.setItem("zk-name", name);
   socket.emit("create", { name });
@@ -90,6 +130,7 @@ $("btn-create").onclick = () => {
 $("btn-join").onclick = () => {
   sfx.unlock();
   sfx.click();
+  if (!requireSocket()) return;
   const name = nameInput.value.trim();
   localStorage.setItem("zk-name", name);
   socket.emit("join", { name, code: codeInput.value });

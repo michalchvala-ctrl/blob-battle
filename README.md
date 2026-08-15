@@ -96,6 +96,46 @@ Bez Public môže Unraid pri pulli zlyhať (401), kým nenastavíš registry log
 V prehliadači: `http://IP-TVOJHO-UNRAIDU:5111`  
 (napr. `http://192.168.1.50:5111`). Pošli ten istý odkaz kamošom v LAN, alebo nastav port forward / VPN podľa potreby.
 
+Ak mapuješ host port inak (napr. **5771 → 5111**), otváraj `http://IP:5771`.
+
+### HTTPS reverse proxy (Nginx Proxy Manager / SWAG / Traefik)
+
+Ak hru sprístupníš cez doménu (napr. `https://blobbattle.euforik.eu`), **musíš forwardovať WebSocket** — inak stránka načíta, ale **Vytvoriť izbu** nič neurobí (Socket.io sa nepripojí).
+
+**Nginx Proxy Manager (najjednoduchšie):**
+
+1. Proxy Host → Domain: `blobbattle.euforik.eu`
+2. Forward: `http://UNRAID_IP:5771` (alebo tvoj host port)
+3. SSL: Let’s Encrypt
+4. Zapni **Websockets Support** (Detail / Advanced podľa verzie NPM)
+5. Scheme `http`, Websockets = On
+
+**Nginx (ručný config):**
+
+```nginx
+location / {
+  proxy_pass http://UNRAID_IP:5771;
+  proxy_http_version 1.1;
+  proxy_set_header Upgrade $http_upgrade;
+  proxy_set_header Connection "upgrade";
+  proxy_set_header Host $host;
+  proxy_set_header X-Real-IP $remote_addr;
+  proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+  proxy_set_header X-Forwarded-Proto $scheme;
+}
+
+location /socket.io/ {
+  proxy_pass http://UNRAID_IP:5771;
+  proxy_http_version 1.1;
+  proxy_set_header Upgrade $http_upgrade;
+  proxy_set_header Connection "upgrade";
+  proxy_set_header Host $host;
+  proxy_set_header X-Forwarded-Proto $scheme;
+}
+```
+
+Bez `Upgrade` / `Connection` hlavičiek Socket.io zlyhá za HTTPS proxy.
+
 ### Lokálny build (voliteľné)
 
 Ak nechceš GHCR a staviaš priamo na Unraide:

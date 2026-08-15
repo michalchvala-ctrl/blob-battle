@@ -9,9 +9,12 @@ const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const app = express();
 const server = http.createServer(app);
 const io = new Server(server, {
+  path: "/socket.io",
   cors: { origin: "*" },
+  transports: ["polling", "websocket"],
   pingTimeout: 20000,
   pingInterval: 8000,
+  allowEIO3: true,
 });
 
 app.use(express.static(path.join(__dirname, "public")));
