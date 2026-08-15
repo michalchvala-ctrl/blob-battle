@@ -192,9 +192,48 @@ button.ghost {
 
 .modes {
   display: grid;
-  grid-template-columns: 1fr 1fr 1fr;
+  grid-template-columns: 1fr 1fr;
   gap: 8px;
   margin-bottom: 14px;
+}
+
+.hp-wrap {
+  position: absolute;
+  left: 50%;
+  bottom: 52px;
+  transform: translateX(-50%);
+  width: min(280px, 70vw);
+  display: grid;
+  grid-template-columns: auto 1fr auto;
+  align-items: center;
+  gap: 8px;
+  background: #120418cc;
+  border: 1px solid #ffffff22;
+  border-radius: 12px;
+  padding: 8px 12px;
+  pointer-events: none;
+}
+
+.hp-label,
+.hp-text {
+  font-weight: 800;
+  font-size: 12px;
+  color: #e9c9ff;
+}
+
+.hp-bar {
+  height: 12px;
+  background: #ffffff18;
+  border-radius: 999px;
+  overflow: hidden;
+}
+
+.hp-fill {
+  height: 100%;
+  width: 100%;
+  background: linear-gradient(90deg, #ff5e6c, #d6ff4a);
+  border-radius: 999px;
+  transition: width 0.15s ease;
 }
 
 .arena-label {

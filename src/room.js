@@ -23,6 +23,7 @@ export const MODE_INFO = {
   sumo: { name: "Zhodiť", blurb: "Posledný na ostrove vyhral. Ostrov ostáva veľký." },
   bomb: { name: "Bomba", blurb: "Dotyk odovzdá bombu. Kto ju drží, vybuchne." },
   hill: { name: "Kráľ kopca", blurb: "Kraje praskajú a úlomky padajú do prázdna. Vydrž." },
+  guns: { name: "Streľba", blurb: "Zbrane, životy, lekárničky. Veľká mapa. Strela = 20 %." },
 };
 
 const CODE_CHARS = "ABCDEFGHJKLMNPQRSTUVWXYZ23456789";
@@ -294,6 +295,9 @@ export class GameRoom {
     this.goats = [];
     this.maxGoats = 2;
     this.goatSpawnT = 6 + Math.random() * 8;
+    this.medkitSpawnT = 8 + Math.random() * 6;
+    this.medkits = [];
+    this.maxMedkits = 4;
     this.nextCrackT = Infinity;
     this.applyLayout(resolveArenaLayout("circle"));
   }
@@ -324,6 +328,9 @@ export class GameRoom {
     for (const g of this.goats) this.world.removeBody(g);
     this.goats = [];
     this.goatSpawnT = 5 + Math.random() * 7;
+    for (const m of this.medkits || []) this.world.removeBody(m);
+    this.medkits = [];
+    this.medkitSpawnT = 6 + Math.random() * 5;
     this.clearShards();
     this.layout = layout;
     // Include sizes/rotation so procedural regenerations always force a client rebuild
@@ -566,6 +573,76 @@ export class GameRoom {
     this.events.push({ type: "goat", id: body.userData.id });
   }
 
+  spawnMedkit() {
+    if (this.mode !== "guns") return;
+    if (this.medkits.length >= this.maxMedkits) return;
+    let x;
+    let z;
+    const pieces = this.layout?.pieces;
+    if (pieces?.length) {
+      const p = pieces[(Math.random() * pieces.length) | 0];
+      const ang = Math.random() * Math.PI * 2;
+      if (p.t === "cyl" || p.t === "tri") {
+        const rr = p.r * (0.15 + Math.random() * 0.7);
+        x = p.x + Math.cos(ang) * rr;
+        z = p.z + Math.sin(ang) * rr;
+      } else {
+        x = p.x + (Math.random() - 0.5) * p.w * 0.7;
+        z = p.z + (Math.random() - 0.5) * p.d * 0.7;
+      }
+    } else {
+      const ang = Math.random() * Math.PI * 2;
+      const r = this.platformRadius * (0.2 + Math.random() * 0.55);
+      x = Math.cos(ang) * r;
+      z = Math.sin(ang) * r;
+    }
+    const body = new CANNON.Body({
+      mass: 1.2,
+      material: this.boxMat,
+      shape: new CANNON.Box(new CANNON.Vec3(0.35, 0.28, 0.35)),
+      position: new CANNON.Vec3(x, 12 + Math.random() * 6, z),
+      linearDamping: 0.15,
+      angularDamping: 0.4,
+    });
+    body.velocity.set(0, -2, 0);
+    body.userData = {
+      id: this.debrisNextId++,
+      kind: "medkit",
+      color: "#2ecc71",
+      sx: 0.7,
+      sy: 0.56,
+      sz: 0.7,
+    };
+    this.world.addBody(body);
+    this.medkits.push(body);
+    this.events.push({ type: "medkitDrop", id: body.userData.id });
+  }
+
+  pickupMedkits() {
+    for (let i = this.medkits.length - 1; i >= 0; i--) {
+      const kit = this.medkits[i];
+      if (kit.position.y < -8) {
+        this.world.removeBody(kit);
+        this.medkits.splice(i, 1);
+        continue;
+      }
+      for (const p of this.players.values()) {
+        if (!p.alive) continue;
+        const dx = p.body.position.x - kit.position.x;
+        const dy = p.body.position.y - kit.position.y;
+        const dz = p.body.position.z - kit.position.z;
+        if (Math.hypot(dx, dy, dz) < 1.6) {
+          const before = p.hp ?? 100;
+          p.hp = Math.min(100, before + 40);
+          this.world.removeBody(kit);
+          this.medkits.splice(i, 1);
+          this.events.push({ type: "medkit", id: p.id, by: p.name, hp: p.hp });
+          break;
+        }
+      }
+    }
+  }
+
   /** Steer goats: slow trot toward nearest player / wander. */
   steerGoats(dt) {
     if (!this.goats.length) return;
@@ -773,11 +850,14 @@ export class GameRoom {
       color: this.colorForIndex(index),
       body,
       alive: true,
-      input: { mx: 0, mz: 0, yaw: 0, jump: false, punch: false, dash: false },
+      input: { mx: 0, mz: 0, yaw: 0, jump: false, punch: false, dash: false, shoot: false },
       jumpHeld: false,
       punchCd: 0,
+      shootCd: 0,
       dashCd: 0,
       punchFlash: 0,
+      shootFlash: 0,
+      hp: 100,
       lastHitBy: null,
       lastHitAt: 0,
       yaw: 0,
@@ -820,12 +900,30 @@ export class GameRoom {
     if (data.jump) p.input.jump = true;
     if (data.punch) p.input.punch = true;
     if (data.dash) p.input.dash = true;
+    if (data.shoot) p.input.shoot = true;
   }
 
   setMode(id, mode) {
     if (id !== this.hostId || this.phase !== "lobby") return;
     if (!MODE_INFO[mode]) return;
     this.mode = mode;
+    if (mode === "guns") {
+      this.applyLayout(resolveArenaLayout("battlefield"), { playing: false });
+      let i = 0;
+      const n = this.players.size;
+      for (const p of this.players.values()) {
+        this.respawn(p, false, i, n);
+        i++;
+      }
+    } else {
+      this.buildArena();
+      let i = 0;
+      const n = this.players.size;
+      for (const p of this.players.values()) {
+        this.respawn(p, false, i, n);
+        i++;
+      }
+    }
     this.broadcastLobby();
   }
 
@@ -872,16 +970,26 @@ export class GameRoom {
       };
       this.applyLayout(layout, { playing: true });
       this.nextCrackT = 4 + Math.random() * 2.5;
+    } else if (this.mode === "guns") {
+      this.applyLayout(resolveArenaLayout("battlefield"), { playing: true });
+      this.nextCrackT = Infinity;
     } else {
       this.buildArena();
       this.nextCrackT = Infinity;
     }
+    // clear leftover medkits
+    for (const m of this.medkits) this.world.removeBody(m);
+    this.medkits = [];
+    this.medkitSpawnT = 5 + Math.random() * 4;
     const list = [...this.players.values()];
     list.forEach((p, i) => {
       p.alive = true;
+      p.hp = 100;
       p.punchCd = 0;
+      p.shootCd = 0;
       p.dashCd = 0;
       p.punchFlash = 0;
+      p.shootFlash = 0;
       p.lastHitBy = null;
       this.respawn(p, false, i, list.length);
     });
@@ -1058,8 +1166,10 @@ export class GameRoom {
 
     for (const p of this.players.values()) {
       p.punchCd = Math.max(0, p.punchCd - dt);
+      p.shootCd = Math.max(0, p.shootCd - dt);
       p.dashCd = Math.max(0, p.dashCd - dt);
       p.punchFlash = Math.max(0, p.punchFlash - dt);
+      p.shootFlash = Math.max(0, (p.shootFlash || 0) - dt);
       if (!p.alive && this.phase === "playing") {
         p.body.velocity.set(0, p.body.velocity.y, 0);
         continue;
@@ -1086,6 +1196,14 @@ export class GameRoom {
       if (this.goatSpawnT <= 0) {
         this.spawnGoat();
         this.goatSpawnT = 10 + Math.random() * 14;
+      }
+      if (this.mode === "guns" && this.phase === "playing") {
+        this.medkitSpawnT -= dt;
+        if (this.medkitSpawnT <= 0) {
+          this.spawnMedkit();
+          this.medkitSpawnT = 7 + Math.random() * 8;
+        }
+        this.pickupMedkits();
       }
     }
     this.removeFallenProps();
@@ -1144,12 +1262,73 @@ export class GameRoom {
     }
     p.input.dash = false;
 
-    if (p.input.punch && p.punchCd <= 0) {
-      this.doPunch(p, fwd);
-      p.punchCd = 0.55;
-      p.punchFlash = 0.22;
+    if (this.mode === "guns") {
+      if ((p.input.shoot || p.input.punch) && p.shootCd <= 0 && p.alive) {
+        this.doShoot(p, fwd);
+        p.shootCd = 0.38;
+        p.shootFlash = 0.12;
+      }
+      p.input.shoot = false;
+      p.input.punch = false;
+    } else {
+      if (p.input.punch && p.punchCd <= 0) {
+        this.doPunch(p, fwd);
+        p.punchCd = 0.55;
+        p.punchFlash = 0.22;
+      }
+      p.input.punch = false;
+      p.input.shoot = false;
     }
-    p.input.punch = false;
+  }
+
+  doShoot(p, fwd) {
+    const origin = p.body.position;
+    const ox = origin.x;
+    const oy = origin.y + 0.35;
+    const oz = origin.z;
+    const range = 90;
+    let hit = null;
+    let hitT = range;
+    for (const o of this.players.values()) {
+      if (o === p || !o.alive) continue;
+      // ray-sphere: closest point on ray to sphere center
+      const dx = o.body.position.x - ox;
+      const dy = o.body.position.y - oy;
+      const dz = o.body.position.z - oz;
+      const t = dx * fwd.x + dy * 0 + dz * fwd.z;
+      if (t < 0.4 || t > hitT) continue;
+      const px = ox + fwd.x * t;
+      const pz = oz + fwd.z * t;
+      const dist = Math.hypot(px - o.body.position.x, (oy - o.body.position.y) * 0.35, pz - o.body.position.z);
+      if (dist < 1.15) {
+        hit = o;
+        hitT = t;
+      }
+    }
+    const ex = ox + fwd.x * hitT;
+    const ey = oy;
+    const ez = oz + fwd.z * hitT;
+    this.events.push({
+      type: "shot",
+      id: p.id,
+      by: p.name,
+      x0: ox,
+      y0: oy,
+      z0: oz,
+      x1: ex,
+      y1: ey,
+      z1: ez,
+      hit: !!hit,
+    });
+    if (!hit) return;
+    hit.hp = Math.max(0, (hit.hp ?? 100) - 20);
+    hit.lastHitBy = p.id;
+    hit.lastHitAt = this.roundT;
+    hit.body.velocity.x += fwd.x * 4.5;
+    hit.body.velocity.z += fwd.z * 4.5;
+    hit.body.velocity.y += 1.5;
+    this.events.push({ type: "hit", by: p.name, victim: hit.name, id: hit.id, hp: hit.hp });
+    if (hit.hp <= 0) this.kill(hit, "shot");
   }
 
   doPunch(p, fwd) {
@@ -1270,7 +1449,7 @@ export class GameRoom {
     p.alive = false;
     const killer = p.lastHitBy && this.roundT - p.lastHitAt < 3.2 ? this.players.get(p.lastHitBy) : null;
     this.events.push({
-      type: reason === "boom" ? "boom" : "fall",
+      type: reason === "boom" ? "boom" : reason === "shot" ? "kill" : "fall",
       victim: p.name,
       by: killer && killer.id !== p.id ? killer.name : null,
       id: p.id,
@@ -1418,7 +1597,9 @@ export class GameRoom {
         yaw: p.yaw,
         alive: p.alive,
         punch: p.punchFlash > 0,
+        shoot: (p.shootFlash || 0) > 0,
         dashCd: p.dashCd,
+        hp: p.hp ?? 100,
       });
     }
     const boxes = this.boxes.map((b, i) => ({
@@ -1470,8 +1651,27 @@ export class GameRoom {
       vy: b.velocity.y,
       vz: b.velocity.z,
     }));
-    // Client still reads one debris list — merge goats with explicit kind
-    const debrisOut = [...debris, ...goats];
+    const medkits = (this.medkits || []).map((b) => ({
+      id: b.userData?.id ?? 0,
+      kind: "medkit",
+      color: "#2ecc71",
+      sx: b.userData?.sx ?? 0.7,
+      sy: b.userData?.sy ?? 0.56,
+      sz: b.userData?.sz ?? 0.7,
+      x: b.position.x,
+      y: b.position.y,
+      z: b.position.z,
+      qx: b.quaternion.x,
+      qy: b.quaternion.y,
+      qz: b.quaternion.z,
+      qw: b.quaternion.w,
+      yaw: 0,
+      vx: b.velocity.x,
+      vy: b.velocity.y,
+      vz: b.velocity.z,
+    }));
+    // Client still reads one debris list — merge goats + medkits with explicit kind
+    const debrisOut = [...debris, ...goats, ...medkits];
     const ev = this.events;
     this.events = [];
     return {

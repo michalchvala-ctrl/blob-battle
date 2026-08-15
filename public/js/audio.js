@@ -43,4 +43,8 @@ export const sfx = {
     beep(220, 0.12, "sawtooth", 0.05, 40);
     setTimeout(() => beep(180, 0.18, "square", 0.06, -60), 70);
   },
+  shoot: () => {
+    beep(520, 0.05, "square", 0.05, -200);
+    beep(180, 0.08, "sawtooth", 0.04, -80);
+  },
 };

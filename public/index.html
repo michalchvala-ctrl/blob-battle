@@ -53,6 +53,10 @@
             <strong>Kráľ kopca</strong>
             <span>Ostrov sa zmenšuje</span>
           </button>
+          <button type="button" data-mode="guns" class="mode">
+            <strong>Streľba</strong>
+            <span>Zbrane · životy · veľká mapa</span>
+          </button>
         </div>
         <p class="eyebrow arena-label">Hracia plocha</p>
         <div id="arenas" class="arenas"></div>
@@ -68,9 +72,14 @@
         <div class="pill bomb hidden" id="bomb-pill">💣 <span id="bomb-t">0.0</span>s</div>
         <div class="pill" id="alive-pill">2 v hre</div>
       </div>
+      <div id="hp-wrap" class="hp-wrap hidden">
+        <div class="hp-label">Život</div>
+        <div class="hp-bar"><div id="hp-fill" class="hp-fill"></div></div>
+        <div id="hp-text" class="hp-text">100%</div>
+      </div>
       <ul id="feed" class="feed"></ul>
       <div id="you-dead" class="banner hidden">Si dole. Esc → menu.</div>
-      <div class="hint-bar">WASD chôdza · koliesko zoom · skok · klik úder · Shift dash · Esc uvoľní myš</div>
+      <div class="hint-bar" id="hint-bar">WASD chôdza · koliesko zoom · skok · klik úder · Shift dash · Esc uvoľní myš</div>
     </div>
 
     <div id="win" class="overlay hidden">

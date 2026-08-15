@@ -530,8 +530,55 @@ export class GameWorld {
     return root;
   }
 
+  makeMedkitMesh(d) {
+    const g = new THREE.Group();
+    const box = new THREE.Mesh(new THREE.BoxGeometry(0.7, 0.5, 0.7), toon("#2ecc71"));
+    box.castShadow = true;
+    const crossV = new THREE.Mesh(new THREE.BoxGeometry(0.18, 0.55, 0.12), toon("#fff"));
+    const crossH = new THREE.Mesh(new THREE.BoxGeometry(0.5, 0.18, 0.12), toon("#fff"));
+    crossV.position.y = 0.05;
+    crossH.position.y = 0.05;
+    crossV.position.z = 0.36;
+    crossH.position.z = 0.36;
+    g.add(box, crossV, crossH);
+    g.position.set(d.x, d.y, d.z);
+    g.quaternion.set(d.qx, d.qy, d.qz, d.qw);
+    return g;
+  }
+
+  spawnShotTrail(ev) {
+    if (!ev) return;
+    const dir = new THREE.Vector3(ev.x1 - ev.x0, (ev.y1 || 0) - (ev.y0 || 0), ev.z1 - ev.z0);
+    const len = Math.max(0.5, dir.length());
+    dir.normalize();
+    const geo = new THREE.CylinderGeometry(0.04, 0.04, len, 5);
+    const mat = new THREE.MeshBasicMaterial({
+      color: ev.hit ? "#ff6b6b" : "#ffe66d",
+      transparent: true,
+      opacity: 0.85,
+    });
+    const mesh = new THREE.Mesh(geo, mat);
+    mesh.position.set((ev.x0 + ev.x1) / 2, ((ev.y0 || 0) + (ev.y1 || 0)) / 2, (ev.z0 + ev.z1) / 2);
+    mesh.quaternion.setFromUnitVectors(new THREE.Vector3(0, 1, 0), dir);
+    this.scene.add(mesh);
+    const born = performance.now();
+    const tick = () => {
+      const age = (performance.now() - born) / 180;
+      if (age >= 1) {
+        this.scene.remove(mesh);
+        geo.dispose();
+        mat.dispose();
+        return;
+      }
+      mat.opacity = 0.85 * (1 - age);
+      requestAnimationFrame(tick);
+    };
+    requestAnimationFrame(tick);
+  }
+
   makeDebrisMesh(d) {
     if (d.kind === "goat") return this.makeGoatMesh(d);
+    if (d.kind === "medkit") return this.makeMedkitMesh(d);
     const color = d.color || "#ff9e00";
     let geo;
     if (d.kind === "sphere") {

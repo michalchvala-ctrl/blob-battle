@@ -133,6 +133,19 @@ export function buildPresetLayout(id) {
         cyl(6.8, -6.2, 3.3),
         cyl(0, 0, 2.6),
       ]);
+    case "battlefield":
+      return layout("battlefield", [
+        cyl(0, 0, 36),
+        box(0, 0, 28, 28),
+        cyl(-28, -18, 8),
+        cyl(28, -18, 8),
+        cyl(-28, 18, 8),
+        cyl(28, 18, 8),
+        box(0, -32, 18, 8),
+        box(0, 32, 18, 8),
+        box(-32, 0, 8, 18),
+        box(32, 0, 8, 18),
+      ]);
     default:
       return buildPresetLayout("circle");
   }

@@ -19,7 +19,7 @@ let dashQueued = false;
 let pointerLocked = false;
 let lookIgnoreUntil = 0;
 
-const MODE_LABEL = { sumo: "Zhodiť", bomb: "Bomba", hill: "Kráľ kopca" };
+const MODE_LABEL = { sumo: "Zhodiť", bomb: "Bomba", hill: "Kráľ kopca", guns: "Streľba" };
 
 function show(el, on) {
   el.classList.toggle("hidden", !on);
@@ -225,6 +225,20 @@ socket.on("st", (st) => {
   const me = st.players.find((p) => p.id === myId);
   const aliveN = st.players.filter((p) => p.alive).length;
   $("alive-pill").textContent = `${aliveN} v hre`;
+
+  const gunsOn = st.mode === "guns" && st.phase === "playing";
+  $("hp-wrap").classList.toggle("hidden", !gunsOn || !me?.alive);
+  if (gunsOn && me) {
+    const hp = Math.max(0, me.hp ?? 100);
+    $("hp-fill").style.width = `${hp}%`;
+    $("hp-text").textContent = `${Math.round(hp)}%`;
+  }
+  if ($("hint-bar")) {
+    $("hint-bar").textContent = gunsOn
+      ? "WASD · skok · klik STREĽBA · Shift dash · Esc uvoľní myš · lekárničky = +40 %"
+      : "WASD chôdza · koliesko zoom · skok · klik úder · Shift dash · Esc uvoľní myš";
+  }
+
   if (st.phase === "playing" && me && !me.alive) {
     $("you-dead").classList.remove("hidden");
     world.spectating = true;
@@ -323,6 +337,23 @@ function handleEvent(ev) {
   } else if (ev.type === "goatHit") {
     sfx.punch();
     world.addShake(0.45);
+  } else if (ev.type === "shot") {
+    world.spawnShotTrail?.(ev);
+    sfx.shoot?.();
+    if (ev.hit) world.addShake(0.12);
+  } else if (ev.type === "hit") {
+    text = `${ev.by} trafil ${ev.victim} (${ev.hp}%)`;
+    sfx.punch();
+    world.addShake(0.25);
+  } else if (ev.type === "kill") {
+    text = ev.by ? `${ev.by} zostrelil ${ev.victim}` : `${ev.victim} vypadol`;
+    sfx.fall();
+    world.addShake(0.4);
+  } else if (ev.type === "medkit") {
+    text = `${ev.by} zobral lekárničku (${ev.hp}%)`;
+    sfx.pass();
+  } else if (ev.type === "medkitDrop") {
+    // silent drop
   }
   if (!text) return;
   const li = document.createElement("li");
@@ -402,6 +433,7 @@ setInterval(() => {
     yaw: world.yaw,
     jump: jumpQueued,
     punch: punchQueued,
+    shoot: punchQueued,
     dash: dashQueued,
   });
   jumpQueued = false;
