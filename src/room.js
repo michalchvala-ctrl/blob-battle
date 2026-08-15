@@ -263,22 +263,22 @@ export class GameRoom {
     );
     this.world.addContactMaterial(
       new CANNON.ContactMaterial(this.goatMat, this.groundMat, {
-        friction: 0.25,
-        restitution: 0.88,
+        friction: 0.85,
+        restitution: 0.02,
       }),
     );
     this.world.addContactMaterial(
       new CANNON.ContactMaterial(this.goatMat, this.playerMat, {
         friction: 0.08,
-        restitution: 0.95,
+        restitution: 0.35,
         contactEquationStiffness: 1e7,
         contactEquationRelaxation: 3,
       }),
     );
     this.world.addContactMaterial(
       new CANNON.ContactMaterial(this.goatMat, this.boxMat, {
-        friction: 0.12,
-        restitution: 0.9,
+        friction: 0.2,
+        restitution: 0.25,
       }),
     );
 
@@ -601,11 +601,16 @@ export class GameRoom {
         wishX = -Math.sin(ud.yaw || 0);
         wishZ = -Math.cos(ud.yaw || 0);
       }
-      // slow run — trot, not rocket
-      const walkSpeed = 3.6;
-      const accel = 10;
+      // trot a bit faster, still readable as walking
+      const walkSpeed = 5.8;
+      const accel = 14;
       g.velocity.x = this.approach(g.velocity.x, wishX * walkSpeed, accel * dt);
       g.velocity.z = this.approach(g.velocity.z, wishZ * walkSpeed, accel * dt);
+      // kill ball-bounce on landing
+      if (g.velocity.y < 0) g.velocity.y *= 0.92;
+      if (g.position.y < 2.2 && g.velocity.y > 0 && g.velocity.y < 6) {
+        g.velocity.y *= 0.15;
+      }
       if (Math.hypot(wishX, wishZ) > 0.05) {
         ud.yaw = Math.atan2(-wishX, -wishZ);
       }
