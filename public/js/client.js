@@ -226,7 +226,11 @@ socket.on("st", (st) => {
 
   const me = st.players.find((p) => p.id === myId);
   const aliveN = st.players.filter((p) => p.alive).length;
-  $("alive-pill").textContent = `${aliveN} v hre`;
+  if (st.mode === "guns" && st.phase === "playing") {
+    $("alive-pill").textContent = `${st.roundKills || 0}/30 zabití`;
+  } else {
+    $("alive-pill").textContent = `${aliveN} v hre`;
+  }
 
   const gunsOn = st.mode === "guns" && st.phase === "playing";
   world.gunsMode = st.mode === "guns";
@@ -240,12 +244,14 @@ socket.on("st", (st) => {
   }
   if ($("hint-bar")) {
     $("hint-bar").textContent = gunsOn
-      ? "WASD · skok · klik STREĽBA · Shift dash · Esc uvoľní myš · lekárničky = +40 %"
+      ? "WASD · skok · klik STREĽBA · Shift dash · Esc uvoľní myš · reset po 30 zabitiach"
       : "WASD chôdza · koliesko zoom · skok · klik úder · Shift dash · Esc uvoľní myš";
   }
 
   if (st.phase === "playing" && me && !me.alive) {
     $("you-dead").classList.remove("hidden");
+    $("you-dead").textContent =
+      st.mode === "guns" ? "Si dole. Respawns o chvíľu…" : "Si dole. Esc → menu.";
     world.spectating = true;
   } else {
     $("you-dead").classList.add("hidden");
@@ -345,8 +351,10 @@ function handleEvent(ev) {
     world.addShake(0.45);
   } else if (ev.type === "shot") {
     world.spawnShotTrail?.(ev);
-    sfx.shoot?.();
+    if (ev.id !== myId) sfx.shoot();
     if (ev.hit) world.addShake(0.12);
+  } else if (ev.type === "bulletHit") {
+    if (ev.hit) world.addShake(0.1);
   } else if (ev.type === "hit") {
     text = `${ev.by} trafil ${ev.victim} (${ev.hp}%)`;
     sfx.punch();
@@ -394,7 +402,10 @@ window.addEventListener("keyup", (e) => {
 
 $("view").addEventListener("mousedown", (e) => {
   if (e.button === 0) {
-    if (!world.spectating) punchQueued = true;
+    if (!world.spectating) {
+      punchQueued = true;
+      if (world.gunsMode) sfx.shoot();
+    }
     if (!pointerLocked) lockPointer();
   }
 });

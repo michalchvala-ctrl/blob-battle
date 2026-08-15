@@ -657,6 +657,44 @@ export class GameWorld {
 
   spawnShotTrail(ev) {
     if (!ev) return;
+    // Flying projectile (50% slower than old instant beam feel)
+    if (ev.speed != null && ev.dx != null) {
+      const speed = ev.speed;
+      const range = ev.range || 120;
+      const dir = new THREE.Vector3(ev.dx, ev.dy || 0, ev.dz).normalize();
+      const geo = new THREE.SphereGeometry(0.18, 8, 6);
+      const mat = new THREE.MeshBasicMaterial({ color: "#ffe66d" });
+      const mesh = new THREE.Mesh(geo, mat);
+      mesh.position.set(ev.x0, ev.y0 || 0, ev.z0);
+      this.scene.add(mesh);
+      const trail = new THREE.Mesh(
+        new THREE.CylinderGeometry(0.04, 0.04, 0.9, 5),
+        new THREE.MeshBasicMaterial({ color: "#ffb703", transparent: true, opacity: 0.7 }),
+      );
+      trail.quaternion.setFromUnitVectors(new THREE.Vector3(0, 1, 0), dir);
+      this.scene.add(trail);
+      const born = performance.now();
+      const dur = (range / speed) * 1000;
+      const tick = () => {
+        const age = (performance.now() - born) / dur;
+        if (age >= 1) {
+          this.scene.remove(mesh);
+          this.scene.remove(trail);
+          geo.dispose();
+          mat.dispose();
+          trail.geometry.dispose();
+          trail.material.dispose();
+          return;
+        }
+        const d = age * range;
+        mesh.position.set(ev.x0 + dir.x * d, (ev.y0 || 0) + dir.y * d, ev.z0 + dir.z * d);
+        trail.position.copy(mesh.position).addScaledVector(dir, -0.45);
+        trail.material.opacity = 0.7 * (1 - age * 0.5);
+        requestAnimationFrame(tick);
+      };
+      requestAnimationFrame(tick);
+      return;
+    }
     const dir = new THREE.Vector3(ev.x1 - ev.x0, (ev.y1 || 0) - (ev.y0 || 0), ev.z1 - ev.z0);
     const len = Math.max(0.5, dir.length());
     dir.normalize();

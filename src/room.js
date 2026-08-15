@@ -218,6 +218,9 @@ export class GameRoom {
     this.nextBroadcast = 0;
     this.events = [];
     this.scores = new Map();
+    this.roundKills = 0;
+    this.bullets = [];
+    this.bulletNextId = 1;
 
     this.groundMat = new CANNON.Material("ground");
     this.playerMat = new CANNON.Material("player");
@@ -1160,6 +1163,8 @@ export class GameRoom {
     this.roundT = 0;
     this.shrinkT = 0;
     this.bombTransferLock = 0;
+    this.roundKills = 0;
+    this.bullets = [];
     // Hill glass shards only work on the circle disk; other modes use selected arena.
     if (this.mode === "hill") {
       let layout = resolveArenaLayout("circle");
@@ -1374,6 +1379,7 @@ export class GameRoom {
     }
 
     this.steerGoats(dt);
+    this.stepBullets(dt);
     this.world.step(1 / 60, dt, 4);
     this.applyPropHitKnockback();
 
@@ -1447,7 +1453,7 @@ export class GameRoom {
     }
 
     if (p.input.jump && !p.jumpHeld && grounded && body.velocity.y < 4) {
-      body.velocity.y = 10.4;
+      body.velocity.y = 14.8;
     }
     p.jumpHeld = !!p.input.jump;
     p.input.jump = false;
@@ -1487,40 +1493,23 @@ export class GameRoom {
     const oz = origin.z;
     const fx = fwd.x;
     const fz = fwd.z;
+    // ~50% slower than the previous ~180 u/s hitscan-feel beam
+    const speed = 90;
     const range = Math.max(90, Math.min(240, this.platformRadius * 1.15));
-    let hitT = range;
-    let hitPlayer = null;
-
-    for (const o of this.players.values()) {
-      if (o === p || !o.alive) continue;
-      const dx = o.body.position.x - ox;
-      const dy = o.body.position.y - oy;
-      const dz = o.body.position.z - oz;
-      const t = dx * fx + dy * 0 + dz * fz;
-      if (t < 0.4 || t > hitT) continue;
-      const px = ox + fx * t;
-      const pz = oz + fz * t;
-      const dist = Math.hypot(px - o.body.position.x, (oy - o.body.position.y) * 0.35, pz - o.body.position.z);
-      if (dist < 1.15) {
-        hitPlayer = o;
-        hitT = t;
-      }
-    }
-
-    let hitProp = null;
-    const props = [...this.boxes, ...this.debris, ...this.goats, ...this.structures];
-    for (const body of props) {
-      if (body.userData?.kind === "medkit") continue;
-      const t = this.raycastBody(ox, oy, oz, fx, 0, fz, body, hitT);
-      if (t == null || t >= hitT) continue;
-      hitT = t;
-      hitProp = body;
-      hitPlayer = null;
-    }
-
-    const ex = ox + fx * hitT;
-    const ey = oy;
-    const ez = oz + fz * hitT;
+    this.bullets.push({
+      id: this.bulletNextId++,
+      ownerId: p.id,
+      by: p.name,
+      x: ox,
+      y: oy,
+      z: oz,
+      vx: fx * speed,
+      vy: 0,
+      vz: fz * speed,
+      speed,
+      life: range / speed,
+      maxLife: range / speed,
+    });
     this.events.push({
       type: "shot",
       id: p.id,
@@ -1528,38 +1517,103 @@ export class GameRoom {
       x0: ox,
       y0: oy,
       z0: oz,
-      x1: ex,
-      y1: ey,
-      z1: ez,
-      hit: !!(hitPlayer || hitProp),
+      dx: fx,
+      dy: 0,
+      dz: fz,
+      speed,
+      range,
+      hit: false,
     });
+  }
 
-    if (hitProp && hitProp.mass > 0 && hitProp.type !== CANNON.Body.STATIC) {
-      hitProp.wakeUp();
-      const kick = 14 + Math.min(22, 80 / Math.max(4, hitProp.mass));
-      hitProp.velocity.x += fx * kick;
-      hitProp.velocity.z += fz * kick;
-      hitProp.velocity.y += 5.5;
-      hitProp.angularVelocity.x += (Math.random() - 0.5) * 8;
-      hitProp.angularVelocity.y += (Math.random() - 0.5) * 10;
-      hitProp.angularVelocity.z += (Math.random() - 0.5) * 8;
+  stepBullets(dt) {
+    if (!this.bullets.length) return;
+    const props = [...this.boxes, ...this.debris, ...this.goats, ...this.structures];
+    for (let i = this.bullets.length - 1; i >= 0; i--) {
+      const b = this.bullets[i];
+      const step = Math.min(dt, b.life);
+      const dist = b.speed * step;
+      const ox = b.x;
+      const oy = b.y;
+      const oz = b.z;
+      const fx = b.vx / b.speed;
+      const fz = b.vz / b.speed;
+      let hitT = dist;
+      let hitPlayer = null;
+      let hitProp = null;
+
+      for (const o of this.players.values()) {
+        if (o.id === b.ownerId || !o.alive) continue;
+        const dx = o.body.position.x - ox;
+        const dy = o.body.position.y - oy;
+        const dz = o.body.position.z - oz;
+        const t = dx * fx + dy * 0 + dz * fz;
+        if (t < 0 || t > hitT) continue;
+        const px = ox + fx * t;
+        const pz = oz + fz * t;
+        const rad = Math.hypot(px - o.body.position.x, (oy - o.body.position.y) * 0.35, pz - o.body.position.z);
+        if (rad < 1.15) {
+          hitPlayer = o;
+          hitT = t;
+        }
+      }
+      for (const body of props) {
+        if (body.userData?.kind === "medkit") continue;
+        const t = this.raycastBody(ox, oy, oz, fx, 0, fz, body, hitT);
+        if (t == null || t >= hitT) continue;
+        hitT = t;
+        hitProp = body;
+        hitPlayer = null;
+      }
+
+      if (hitPlayer || hitProp) {
+        const ex = ox + fx * hitT;
+        const ey = oy;
+        const ez = oz + fz * hitT;
+        this.events.push({
+          type: "bulletHit",
+          x: ex,
+          y: ey,
+          z: ez,
+          hit: !!hitPlayer,
+        });
+        if (hitProp && hitProp.mass > 0 && hitProp.type !== CANNON.Body.STATIC) {
+          hitProp.wakeUp();
+          const kick = 14 + Math.min(22, 80 / Math.max(4, hitProp.mass));
+          hitProp.velocity.x += fx * kick;
+          hitProp.velocity.z += fz * kick;
+          hitProp.velocity.y += 5.5;
+          hitProp.angularVelocity.x += (Math.random() - 0.5) * 8;
+          hitProp.angularVelocity.y += (Math.random() - 0.5) * 10;
+          hitProp.angularVelocity.z += (Math.random() - 0.5) * 8;
+        }
+        if (hitPlayer) {
+          const shooter = this.players.get(b.ownerId);
+          hitPlayer.hp = Math.max(0, (hitPlayer.hp ?? 100) - 20);
+          hitPlayer.lastHitBy = b.ownerId;
+          hitPlayer.lastHitAt = this.roundT;
+          hitPlayer.body.velocity.x += fx * 4.5;
+          hitPlayer.body.velocity.z += fz * 4.5;
+          hitPlayer.body.velocity.y += 1.5;
+          this.events.push({
+            type: "hit",
+            by: b.by || shooter?.name || "?",
+            victim: hitPlayer.name,
+            id: hitPlayer.id,
+            hp: hitPlayer.hp,
+          });
+          if (hitPlayer.hp <= 0) this.kill(hitPlayer, "shot");
+        }
+        this.bullets.splice(i, 1);
+        continue;
+      }
+
+      b.x += b.vx * step;
+      b.y += b.vy * step;
+      b.z += b.vz * step;
+      b.life -= step;
+      if (b.life <= 0) this.bullets.splice(i, 1);
     }
-
-    if (!hitPlayer) return;
-    hitPlayer.hp = Math.max(0, (hitPlayer.hp ?? 100) - 20);
-    hitPlayer.lastHitBy = p.id;
-    hitPlayer.lastHitAt = this.roundT;
-    hitPlayer.body.velocity.x += fx * 4.5;
-    hitPlayer.body.velocity.z += fz * 4.5;
-    hitPlayer.body.velocity.y += 1.5;
-    this.events.push({
-      type: "hit",
-      by: p.name,
-      victim: hitPlayer.name,
-      id: hitPlayer.id,
-      hp: hitPlayer.hp,
-    });
-    if (hitPlayer.hp <= 0) this.kill(hitPlayer, "shot");
   }
 
   /** Ray vs cannon body shapes (box / sphere / cylinder). Returns distance t or null. */
@@ -1771,10 +1825,60 @@ export class GameRoom {
     }
     p.body.velocity.x *= 0.3;
     p.body.velocity.z *= 0.3;
+
+    if (this.mode === "guns") {
+      if (reason === "shot" && killer && killer.id !== p.id) {
+        this.roundKills = (this.roundKills || 0) + 1;
+        this.scores.set(killer.id, (this.scores.get(killer.id) || 0) + 1);
+      }
+      // Soft respawn — keep map debris / buildings
+      const victimId = p.id;
+      setTimeout(() => {
+        if (this.phase !== "playing" || this.mode !== "guns") return;
+        const pl = this.players.get(victimId);
+        if (!pl || pl.alive) return;
+        pl.alive = true;
+        pl.hp = 100;
+        pl.lastHitBy = null;
+        pl.shootCd = 0.4;
+        this.respawn(pl, true);
+      }, 1600);
+      if ((this.roundKills || 0) >= 30) this.endGunsRound();
+    }
+  }
+
+  endGunsRound() {
+    if (this.phase !== "playing" || this.mode !== "guns") return;
+    this.phase = "results";
+    this.bullets = [];
+    let best = null;
+    let bestS = -1;
+    for (const p of this.players.values()) {
+      const s = this.scores.get(p.id) || 0;
+      if (s > bestS) {
+        bestS = s;
+        best = p;
+      }
+    }
+    this.winnerId = best?.id || null;
+    this.winnerName = best?.name || "Nikto";
+    this.emit("over", {
+      winnerId: this.winnerId,
+      winnerName: this.winnerName,
+      scores: this.scoreboard(),
+      roundKills: this.roundKills,
+    });
+    setTimeout(() => {
+      if (this.phase === "results" && this.players.size) this.beginRound();
+    }, 5200);
   }
 
   checkWin() {
     if (this.phase !== "playing") return;
+    if (this.mode === "guns") {
+      if ((this.roundKills || 0) >= 30) this.endGunsRound();
+      return;
+    }
     const alive = [...this.players.values()].filter((p) => p.alive);
     if (this.players.size === 1) {
       // alone: win only after falling off? keep playing until they fall, or after 3s mark practice
@@ -2000,6 +2104,7 @@ export class GameRoom {
       bombT: this.bombT,
       winnerId: this.winnerId,
       winnerName: this.winnerName,
+      roundKills: this.roundKills || 0,
       players,
       boxes,
       debris: debrisOut,

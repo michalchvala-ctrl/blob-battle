@@ -44,7 +44,9 @@ export const sfx = {
     setTimeout(() => beep(180, 0.18, "square", 0.06, -60), 70);
   },
   shoot: () => {
-    beep(520, 0.05, "square", 0.05, -200);
-    beep(180, 0.08, "sawtooth", 0.04, -80);
+    // Punchy pistol bang
+    beep(980, 0.04, "square", 0.09, -420);
+    beep(220, 0.12, "sawtooth", 0.08, -120);
+    beep(90, 0.16, "square", 0.07, -40);
   },
 };
