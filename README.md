@@ -58,9 +58,47 @@ Node + Express + Socket.io, fyzika `cannon-es`, grafika Three.js.
 
 ## Unraid Docker (port 5111)
 
-Hru môžeš spustiť na Unraid ako Docker kontajner. Port hry je **5111**.
+Hru môžeš spustiť na Unraid ako Docker kontajner. Image vychádza z **GitHub Container Registry (GHCR)** — po pushi do `main` CI postaví nový image a **Force Update** na Unraide ho stiahne.
 
-### 1. Postavenie image (Unraid terminál)
+### Image
+
+- **Repository (Unraid):** `ghcr.io/michalchvala-ctrl/blob-battle:latest`
+- Port: **5111**
+- ENV: `PORT=5111` (v image už predvolené)
+
+CI workflow: `.github/workflows/docker-publish.yml` (push na `main` + manuálne `workflow_dispatch`).
+
+### Viditeľnosť balíka (dôležité pre pull bez tokenu)
+
+Po prvom publishi: GitHub → [Packages](https://github.com/michalchvala-ctrl?tab=packages) → **blob-battle** → **Package settings** → **Change visibility** → **Public**.  
+Bez Public môže Unraid pri pulli zlyhať (401), kým nenastavíš registry login.
+
+### Pridanie kontajnera cez web UI
+
+1. Otvor **Docker** → **Add Container**.
+2. Nastav:
+   - **Name:** `blob-battle`
+   - **Repository:** `ghcr.io/michalchvala-ctrl/blob-battle:latest`
+   - **Network Type:** Bridge
+   - **Restart policy:** Unless stopped (`unless-stopped`)
+3. **Port Mappings:** Host port **5111** → Container port **5111** (TCP).
+4. **Environment Variables:** `PORT` = `5111` (voliteľné — v image je už predvolené).
+5. Apply / Done.
+
+### Aktualizácia (Force Update)
+
+1. Pushni zmeny do `main` (alebo spusti workflow **Publish Docker image to GHCR** manuálne).
+2. Počkaj, kým Actions build/push prebehne úspešne.
+3. Na Unraide pri kontajneri **blob-battle** klikni **Force Update** — stiahne nový `:latest` image a reštartuje kontajner.
+
+### Otvorenie hry
+
+V prehliadači: `http://IP-TVOJHO-UNRAIDU:5111`  
+(napr. `http://192.168.1.50:5111`). Pošli ten istý odkaz kamošom v LAN, alebo nastav port forward / VPN podľa potreby.
+
+### Lokálny build (voliteľné)
+
+Ak nechceš GHCR a staviaš priamo na Unraide:
 
 ```bash
 cd /mnt/user/appdata
@@ -69,24 +107,4 @@ cd blob-battle
 docker build -t blob-battle:latest .
 ```
 
-(Ak už máš súbory stiahnuté, stačí `cd` do priečinka s `Dockerfile` a `docker build -t blob-battle:latest .`.)
-
-### 2. Pridanie kontajnera cez web UI
-
-1. Otvor **Docker** → **Add Container** (pridať kontajner).
-2. Nastav:
-   - **Name:** `blob-battle`
-   - **Repository:** `blob-battle:latest` (lokálny image z kroku vyššie)
-   - **Network Type:** Bridge
-   - **Restart policy:** Unless stopped (`unless-stopped`)
-3. **Port Mappings:** Host port **5111** → Container port **5111** (TCP).
-4. **Environment Variables:** pridaj `PORT` = `5111` (voliteľné — v image je už predvolené).
-5. Apply / Done.
-
-### 3. Otvorenie hry
-
-V prehliadači: `http://IP-TVOJHO-UNRAIDU:5111`
-(napr. `http://192.168.1.50:5111`). Pošli ten istý odkaz kamošom v LAN, alebo nastav port forward / VPN podľa potreby.
-
-> **Poznámka:** Na Docker Hub image nepublikujeme — builduješ z GitHubu/`Dockerfile` lokálne na Unraid.
-
+Potom v Unraid Repository použi `blob-battle:latest` (Force Update z registry v tom prípade nefunguje — treba znova `docker build`).
