@@ -489,8 +489,10 @@ $("view").addEventListener("mousedown", (e) => {
       punchQueued = true;
       if (world.gunsMode) {
         if (world.weapon === "knife") sfx.whoosh();
-        else if ((world.ammo || 0) > 0) sfx.shoot();
-        else sfx.whoosh();
+        else if ((world.ammo || 0) > 0) {
+          sfx.shoot();
+          world._gunKick = 1;
+        } else sfx.whoosh();
       }
     }
     if (!pointerLocked) lockPointer();

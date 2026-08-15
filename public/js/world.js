@@ -28,6 +28,157 @@ function toon(color, opts = {}) {
   return new THREE.MeshToonMaterial({ color, gradientMap: gradient, ...opts });
 }
 
+function markWeaponShadows(root) {
+  root.traverse((o) => {
+    if (o.isMesh) {
+      o.castShadow = true;
+      o.receiveShadow = true;
+    }
+  });
+  return root;
+}
+
+/** Low-poly pistol — grip, slide, barrel, sights (not just boxes glued together). */
+function makePistolMesh(scale = 1) {
+  const g = new THREE.Group();
+  const steel = toon("#2f3542");
+  const dark = toon("#1a1e26");
+  const gripC = toon("#3d2914");
+  const accent = toon("#d6ff4a");
+  const silver = toon("#9aa3b2");
+
+  const grip = new THREE.Mesh(new THREE.BoxGeometry(0.09, 0.2, 0.11), gripC);
+  grip.position.set(0, -0.1, 0.02);
+  grip.rotation.x = 0.18;
+  const gripDetail = new THREE.Mesh(new THREE.BoxGeometry(0.095, 0.06, 0.02), dark);
+  gripDetail.position.set(0, -0.12, 0.07);
+
+  const frame = new THREE.Mesh(new THREE.BoxGeometry(0.1, 0.09, 0.28), steel);
+  frame.position.set(0, 0.02, 0.14);
+  const slide = new THREE.Mesh(new THREE.BoxGeometry(0.095, 0.055, 0.26), dark);
+  slide.position.set(0, 0.07, 0.13);
+  const slideRidge = new THREE.Mesh(new THREE.BoxGeometry(0.1, 0.02, 0.08), silver);
+  slideRidge.position.set(0, 0.1, 0.02);
+
+  const barrel = new THREE.Mesh(new THREE.CylinderGeometry(0.028, 0.032, 0.22, 10), dark);
+  barrel.rotation.x = Math.PI / 2;
+  barrel.position.set(0, 0.045, 0.36);
+  const muzzle = new THREE.Mesh(new THREE.CylinderGeometry(0.034, 0.03, 0.04, 10), silver);
+  muzzle.rotation.x = Math.PI / 2;
+  muzzle.position.set(0, 0.045, 0.48);
+
+  const triggerGuard = new THREE.Mesh(new THREE.TorusGeometry(0.045, 0.012, 6, 12, Math.PI), dark);
+  triggerGuard.rotation.y = Math.PI / 2;
+  triggerGuard.position.set(0, -0.02, 0.1);
+  const trigger = new THREE.Mesh(new THREE.BoxGeometry(0.02, 0.04, 0.015), silver);
+  trigger.position.set(0, -0.01, 0.1);
+
+  const frontSight = new THREE.Mesh(new THREE.BoxGeometry(0.02, 0.035, 0.02), accent);
+  frontSight.position.set(0, 0.12, 0.32);
+  const rearSight = new THREE.Mesh(new THREE.BoxGeometry(0.05, 0.028, 0.02), accent);
+  rearSight.position.set(0, 0.115, 0.02);
+  const mag = new THREE.Mesh(new THREE.BoxGeometry(0.07, 0.12, 0.08), dark);
+  mag.position.set(0, -0.14, 0.06);
+
+  g.add(grip, gripDetail, frame, slide, slideRidge, barrel, muzzle, triggerGuard, trigger, frontSight, rearSight, mag);
+  g.scale.setScalar(scale);
+  return markWeaponShadows(g);
+}
+
+/** Long rifle with scope — used for FPS sniper + world pickup. */
+function makeSniperMesh(scale = 1) {
+  const g = new THREE.Group();
+  const stock = toon("#5c3a21");
+  const steel = toon("#1f2937");
+  const dark = toon("#111827");
+  const scopeC = toon("#374151");
+  const glass = toon("#7ec8ff", { transparent: true, opacity: 0.55 });
+  const accent = toon("#ef4444");
+
+  const butt = new THREE.Mesh(new THREE.BoxGeometry(0.1, 0.14, 0.28), stock);
+  butt.position.set(0, -0.02, -0.22);
+  const cheek = new THREE.Mesh(new THREE.BoxGeometry(0.08, 0.08, 0.18), stock);
+  cheek.position.set(0, 0.06, -0.12);
+
+  const receiver = new THREE.Mesh(new THREE.BoxGeometry(0.09, 0.1, 0.36), steel);
+  receiver.position.set(0, 0.02, 0.12);
+  const barrel = new THREE.Mesh(new THREE.CylinderGeometry(0.025, 0.032, 0.7, 10), dark);
+  barrel.rotation.x = Math.PI / 2;
+  barrel.position.set(0, 0.04, 0.55);
+  const muzzleBrake = new THREE.Mesh(new THREE.CylinderGeometry(0.04, 0.036, 0.08, 8), steel);
+  muzzleBrake.rotation.x = Math.PI / 2;
+  muzzleBrake.position.set(0, 0.04, 0.92);
+
+  const mag = new THREE.Mesh(new THREE.BoxGeometry(0.07, 0.14, 0.1), dark);
+  mag.position.set(0, -0.1, 0.08);
+  const bipodL = new THREE.Mesh(new THREE.CylinderGeometry(0.012, 0.012, 0.16, 6), steel);
+  bipodL.position.set(-0.05, -0.1, 0.55);
+  bipodL.rotation.z = 0.35;
+  const bipodR = bipodL.clone();
+  bipodR.position.x = 0.05;
+  bipodR.rotation.z = -0.35;
+
+  const scopeBody = new THREE.Mesh(new THREE.CylinderGeometry(0.045, 0.045, 0.32, 12), scopeC);
+  scopeBody.rotation.x = Math.PI / 2;
+  scopeBody.position.set(0, 0.14, 0.1);
+  const scopeFront = new THREE.Mesh(new THREE.CylinderGeometry(0.055, 0.05, 0.06, 12), dark);
+  scopeFront.rotation.x = Math.PI / 2;
+  scopeFront.position.set(0, 0.14, 0.28);
+  const scopeLens = new THREE.Mesh(new THREE.CircleGeometry(0.04, 12), glass);
+  scopeLens.position.set(0, 0.14, 0.312);
+  const scopeMount = new THREE.Mesh(new THREE.BoxGeometry(0.04, 0.05, 0.2), steel);
+  scopeMount.position.set(0, 0.09, 0.1);
+  const laser = new THREE.Mesh(new THREE.BoxGeometry(0.025, 0.025, 0.08), accent);
+  laser.position.set(0.05, 0.0, 0.35);
+
+  g.add(
+    butt,
+    cheek,
+    receiver,
+    barrel,
+    muzzleBrake,
+    mag,
+    bipodL,
+    bipodR,
+    scopeBody,
+    scopeFront,
+    scopeLens,
+    scopeMount,
+    laser,
+  );
+  g.scale.setScalar(scale);
+  return markWeaponShadows(g);
+}
+
+/** Combat knife with tapered blade and guard. */
+function makeKnifeMesh(scale = 1) {
+  const g = new THREE.Group();
+  const wood = toon("#6b3f1e");
+  const steel = toon("#c5ced9");
+  const dark = toon("#2a303c");
+  const edge = toon("#eef2f7");
+
+  const handle = new THREE.Mesh(new THREE.CylinderGeometry(0.028, 0.032, 0.16, 8), wood);
+  handle.position.set(0, -0.02, 0);
+  const pommel = new THREE.Mesh(new THREE.SphereGeometry(0.032, 8, 6), dark);
+  pommel.position.set(0, -0.1, 0);
+  const guard = new THREE.Mesh(new THREE.BoxGeometry(0.1, 0.02, 0.04), dark);
+  guard.position.set(0, 0.06, 0);
+
+  const blade = new THREE.Mesh(new THREE.BoxGeometry(0.045, 0.018, 0.34), steel);
+  blade.position.set(0, 0.08, 0.2);
+  // Taper tip with a second wedge
+  const tip = new THREE.Mesh(new THREE.ConeGeometry(0.028, 0.1, 4), edge);
+  tip.rotation.x = -Math.PI / 2;
+  tip.position.set(0, 0.08, 0.42);
+  const fuller = new THREE.Mesh(new THREE.BoxGeometry(0.012, 0.006, 0.22), dark);
+  fuller.position.set(0, 0.09, 0.18);
+
+  g.add(handle, pommel, guard, blade, tip, fuller);
+  g.scale.setScalar(scale);
+  return markWeaponShadows(g);
+}
+
 function makeLabel(text) {
   const c = document.createElement("canvas");
   c.width = 320;
@@ -79,21 +230,10 @@ export function createJelly(color, name) {
   armL.position.set(-0.72, -0.05, 0.1);
   armR.position.set(0.72, -0.05, 0.1);
 
-  // Boxy blaster held in right hand (shown in Streľba mode)
-  const gun = new THREE.Group();
-  const gunMat = toon("#3d4454");
-  const gunAccent = toon("#d6ff4a");
-  const grip = new THREE.Mesh(new THREE.BoxGeometry(0.16, 0.32, 0.18), gunMat);
-  grip.position.set(0, -0.12, 0);
-  const bodyG = new THREE.Mesh(new THREE.BoxGeometry(0.22, 0.2, 0.55), gunMat);
-  bodyG.position.set(0, 0.06, 0.22);
-  const barrel = new THREE.Mesh(new THREE.BoxGeometry(0.12, 0.12, 0.45), toon("#2a303c"));
-  barrel.position.set(0, 0.08, 0.58);
-  const sight = new THREE.Mesh(new THREE.BoxGeometry(0.06, 0.1, 0.1), gunAccent);
-  sight.position.set(0, 0.2, 0.15);
-  gun.add(grip, bodyG, barrel, sight);
-  gun.position.set(0.15, -0.05, 0.35);
-  gun.rotation.set(-0.15, 0, -0.2);
+  // Weapon in right hand (Streľba mode) — detailed pistol
+  const gun = makePistolMesh(1.35);
+  gun.position.set(0.12, -0.08, 0.28);
+  gun.rotation.set(-0.25, 0.15, -0.35);
   gun.visible = false;
   armR.add(gun);
 
@@ -911,16 +1051,9 @@ export class GameWorld {
   }
 
   makeSniperPickupMesh(d) {
-    const g = new THREE.Group();
-    const mat = toon("#1f2937");
-    const body = new THREE.Mesh(new THREE.BoxGeometry(1.15, 0.14, 0.16), mat);
-    const barrel = new THREE.Mesh(new THREE.BoxGeometry(0.7, 0.08, 0.08), toon("#111827"));
-    barrel.position.x = 0.7;
-    const scope = new THREE.Mesh(new THREE.CylinderGeometry(0.07, 0.07, 0.28, 8), toon("#4b5563"));
-    scope.rotation.z = Math.PI / 2;
-    scope.position.set(0.1, 0.14, 0);
-    g.add(body, barrel, scope);
-    g.position.set(d.x || 0, d.y || 0, d.z || 0);
+    const g = makeSniperMesh(1.15);
+    g.rotation.y = Math.PI / 2;
+    g.position.set(d.x || 0, (d.y || 0) + 0.08, d.z || 0);
     return g;
   }
 
@@ -1430,9 +1563,33 @@ export class GameWorld {
       ud.body.scale.z = THREE.MathUtils.lerp(ud.body.scale.z, targetSz, 0.28);
 
       const guns = this.gunsMode && p.alive;
-      if (ud.gun) ud.gun.visible = guns;
+      const wpn = p.weapon || "pistol";
+      if (ud.gun) {
+        // Swap third-person prop when weapon changes
+        if (ud.gunKind !== wpn) {
+          ud.armR.remove(ud.gun);
+          let prop;
+          if (wpn === "sniper") {
+            prop = makeSniperMesh(1.1);
+            prop.position.set(0.1, -0.05, 0.22);
+            prop.rotation.set(-0.2, 0.1, -0.25);
+          } else if (wpn === "knife") {
+            prop = makeKnifeMesh(1.2);
+            prop.position.set(0.08, -0.02, 0.25);
+            prop.rotation.set(-0.4, 0.5, -0.8);
+          } else {
+            prop = makePistolMesh(1.35);
+            prop.position.set(0.12, -0.08, 0.28);
+            prop.rotation.set(-0.25, 0.15, -0.35);
+          }
+          ud.gun = prop;
+          ud.gunKind = wpn;
+          ud.armR.add(prop);
+        }
+        ud.gun.visible = guns;
+      }
       if (guns) {
-        // Aim pose — right arm forward with blaster
+        // Aim pose — right arm forward with weapon
         const kick = p.shoot ? -0.55 : -0.25;
         ud.armR.rotation.x = kick;
         ud.armR.rotation.z = -0.35;
@@ -1441,7 +1598,7 @@ export class GameWorld {
         ud.armL.rotation.z = 0.35;
         if (ud.gun) {
           ud.gun.rotation.x = p.shoot ? -0.35 : -0.1;
-          ud.gun.position.z = p.shoot ? 0.28 : 0.35;
+          ud.gun.position.z = p.shoot ? 0.22 : 0.28;
         }
       } else {
         ud.armL.rotation.x = p.punch ? -0.4 : -wobble * 0.9;
@@ -1812,47 +1969,35 @@ export class GameWorld {
   }
 
   updateFpsGun() {
-    if (!this.fpsGun) {
-      const gun = new THREE.Group();
-      const mat = toon("#3d4454");
-      const accent = toon("#d6ff4a");
-      const grip = new THREE.Mesh(new THREE.BoxGeometry(0.08, 0.16, 0.09), mat);
-      grip.position.set(0, -0.08, 0);
-      const body = new THREE.Mesh(new THREE.BoxGeometry(0.11, 0.1, 0.28), mat);
-      body.position.set(0, 0.02, 0.12);
-      const barrel = new THREE.Mesh(new THREE.BoxGeometry(0.06, 0.06, 0.22), toon("#2a303c"));
-      barrel.position.set(0, 0.03, 0.3);
-      const sight = new THREE.Mesh(new THREE.BoxGeometry(0.03, 0.05, 0.05), accent);
-      sight.position.set(0, 0.1, 0.08);
-      gun.add(grip, body, barrel, sight);
-      gun.userData.isGun = true;
-      this.camera.add(gun);
-      this.fpsGun = gun;
+    if (!this.fpsPistol) {
+      this.fpsPistol = makePistolMesh(1);
+      this.camera.add(this.fpsPistol);
+    }
+    if (!this.fpsSniper) {
+      this.fpsSniper = makeSniperMesh(0.85);
+      this.camera.add(this.fpsSniper);
     }
     if (!this.fpsKnife) {
-      const knife = new THREE.Group();
-      const handle = new THREE.Mesh(new THREE.BoxGeometry(0.05, 0.12, 0.05), toon("#5c3a21"));
-      handle.position.set(0, -0.06, 0);
-      const blade = new THREE.Mesh(new THREE.BoxGeometry(0.04, 0.02, 0.32), toon("#cfd8e3"));
-      blade.position.set(0, 0.02, 0.18);
-      knife.add(handle, blade);
-      this.camera.add(knife);
-      this.fpsKnife = knife;
+      this.fpsKnife = makeKnifeMesh(1.1);
+      this.camera.add(this.fpsKnife);
     }
+    // Keep legacy alias for any old refs
+    this.fpsGun = this.fpsPistol;
+
     const show = !!this.gunsMode && !this.spectating;
     const w = this.weapon || "knife";
-    this.fpsGun.visible = show && w !== "knife";
+    this.fpsPistol.visible = show && w === "pistol";
+    this.fpsSniper.visible = show && w === "sniper";
     this.fpsKnife.visible = show && w === "knife";
-    if (w === "sniper") {
-      this.fpsGun.scale.set(1.35, 1.1, 1.8);
-      this.fpsGun.position.set(0.28, -0.22, -0.55);
-    } else {
-      this.fpsGun.scale.set(1, 1, 1);
-      this.fpsGun.position.set(0.22, -0.18, -0.42);
-    }
-    this.fpsGun.rotation.set(0.05, 0.08, 0.12);
-    this.fpsKnife.position.set(0.2, -0.16, -0.35);
-    this.fpsKnife.rotation.set(0.15, 0.2, 0.35);
+
+    const kick = this._gunKick || 0;
+    this.fpsPistol.position.set(0.22, -0.2 - kick * 0.04, -0.42 + kick * 0.06);
+    this.fpsPistol.rotation.set(0.08 + kick * 0.2, 0.12, 0.08);
+    this.fpsSniper.position.set(0.18, -0.2 - kick * 0.05, -0.55 + kick * 0.08);
+    this.fpsSniper.rotation.set(0.02 + kick * 0.25, 0.04, 0.02);
+    this.fpsKnife.position.set(0.22, -0.18, -0.38);
+    this.fpsKnife.rotation.set(0.2, 0.35, 0.55);
+    this._gunKick = Math.max(0, kick - 0.08);
   }
 
   updateSunFollow(x, z) {
