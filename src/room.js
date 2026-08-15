@@ -439,7 +439,32 @@ export class GameRoom {
     this.clearStructures();
     this.ladders = [];
     const items = [];
-    const buildingColors = ["#ff8ec4", "#c77dff", "#5ce1ff", "#ffd36a", "#80ffdb", "#ff9e00"];
+    const buildingModels = [
+      "building-type-a",
+      "building-type-b",
+      "building-type-c",
+      "building-type-d",
+      "building-type-e",
+      "building-type-g",
+      "building-type-i",
+      "building-type-k",
+      "building-type-m",
+      "building-type-o",
+      "building-type-q",
+      "building-type-s",
+    ];
+    const treeModels = [
+      "tree_oak",
+      "tree_detailed",
+      "tree_pineDefaultA",
+      "tree_pineRoundC",
+      "tree_fat",
+      "tree_cone",
+      "tree_default",
+      "tree_pineSmallB",
+      "tree-large",
+      "tree-small",
+    ];
     let n = 0;
     for (let ix = -3; ix <= 3; ix++) {
       for (let iz = -3; iz <= 3; iz++) {
@@ -448,26 +473,28 @@ export class GameRoom {
         const z = iz * 38 + ((ix * 11 + iz * 19) % 7) - 3;
         if (Math.hypot(x, z) < 32) continue;
         if (Math.abs(x) > 130 || Math.abs(z) > 130) continue;
-        const w = 10 + ((n * 3) % 6);
-        const d = 10 + ((n * 5) % 6);
-        const h = 8 + ((n * 7) % 8);
+        const w = 11 + ((n * 3) % 5);
+        const d = 9 + ((n * 5) % 5);
+        const h = 7 + ((n * 7) % 5);
         items.push({
-          id: n++,
+          id: n,
           kind: "building",
+          model: buildingModels[n % buildingModels.length],
           x,
           z,
           w,
           d,
           h,
-          rotY: 0,
-          color: buildingColors[n % buildingColors.length],
+          rotY: ((n * 90) % 360) * (Math.PI / 180),
+          color: "#e8dcc8",
           hollow: true,
         });
+        n++;
       }
     }
-    for (let i = 0; i < 40; i++) {
-      const a = (i / 40) * Math.PI * 2 + i * 0.17;
-      const rr = 24 + (i % 7) * 15 + (i % 3) * 4;
+    for (let i = 0; i < 48; i++) {
+      const a = (i / 48) * Math.PI * 2 + i * 0.17;
+      const rr = 22 + (i % 8) * 14 + (i % 3) * 4;
       const x = Math.cos(a) * rr;
       const z = Math.sin(a) * rr;
       if (Math.abs(x) > 140 || Math.abs(z) > 140) continue;
@@ -475,15 +502,16 @@ export class GameRoom {
       items.push({
         id: n++,
         kind: "tree",
+        model: treeModels[i % treeModels.length],
         x,
         z,
-        r: 2.2 + (i % 4) * 0.55,
-        h: 5.5 + (i % 5) * 1.1,
+        r: 2.0 + (i % 4) * 0.5,
+        h: 6 + (i % 5) * 1.3,
         color: i % 2 === 0 ? "#3ecf6a" : "#2aad52",
       });
     }
     this.layout.structures = items;
-    this.layoutKey += `|struct:${items.length}:${items.map((s) => `${s.kind},${s.x.toFixed(1)},${s.z.toFixed(1)}`).join(";")}`;
+    this.layoutKey += `|struct:${items.length}:${items.map((s) => `${s.kind},${s.model || ""},${s.x.toFixed(1)},${s.z.toFixed(1)}`).join(";")}`;
 
     for (const s of items) {
       if (s.kind === "building") {

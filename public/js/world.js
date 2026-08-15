@@ -1,4 +1,11 @@
 import * as THREE from "three";
+import { GLTFLoader } from "three/addons/loaders/GLTFLoader.js";
+import {
+  BUILDING_MODELS,
+  TREE_MODELS,
+  buildingModelPath,
+  treeModelPath,
+} from "./models.js";
 
 const gradient = (() => {
   const c = document.createElement("canvas");
@@ -148,6 +155,9 @@ export class GameWorld {
     this.hasSniper = false;
     this.baseFov = 70;
     this.windParticles = null;
+    this.gltfCache = new Map();
+    this.pendingStructures = null;
+    this.modelsReady = this.preloadStructureModels();
     this.camDist = 6.8;
     this.camHeight = 1.9;
     this.snapCam = false;
@@ -286,127 +296,240 @@ export class GameWorld {
 
   buildStructures(list) {
     this.clearStructures();
+    this.pendingStructures = list || null;
     if (!list?.length) return;
-    for (const s of list) {
-      this.structureGroup.add(this.makeStructureMesh(s));
+    const paint = () => {
+      if (this.pendingStructures !== list) return;
+      this.clearStructures();
+      for (const s of list) {
+        this.structureGroup.add(this.makeStructureMesh(s));
+      }
+    };
+    if (this.gltfCache.size) {
+      paint();
+      return;
     }
+    this.modelsReady.then(paint).catch(() => paint());
+  }
+
+  async preloadStructureModels() {
+    const loader = new GLTFLoader();
+    const jobs = [];
+    for (const id of BUILDING_MODELS) {
+      jobs.push(
+        loader.loadAsync(buildingModelPath(id)).then((gltf) => {
+          this.prepareGltfScene(gltf.scene);
+          this.gltfCache.set(`building:${id}`, gltf.scene);
+        }),
+      );
+    }
+    for (const id of TREE_MODELS) {
+      jobs.push(
+        loader.loadAsync(treeModelPath(id)).then((gltf) => {
+          this.prepareGltfScene(gltf.scene);
+          this.gltfCache.set(`tree:${id}`, gltf.scene);
+        }),
+      );
+    }
+    await Promise.allSettled(jobs);
+    if (this.pendingStructures?.length) {
+      const list = this.pendingStructures;
+      this.clearStructures();
+      for (const s of list) this.structureGroup.add(this.makeStructureMesh(s));
+    }
+  }
+
+  prepareGltfScene(root) {
+    root.traverse((o) => {
+      if (!o.isMesh) return;
+      o.castShadow = true;
+      o.receiveShadow = true;
+      const mats = Array.isArray(o.material) ? o.material : [o.material];
+      for (const m of mats) {
+        if (!m) continue;
+        m.side = THREE.DoubleSide;
+        m.shadowSide = THREE.DoubleSide;
+      }
+    });
+  }
+
+  fitGltfToBox(model, tw, th, td, { uniform = true } = {}) {
+    model.updateMatrixWorld(true);
+    const box = new THREE.Box3().setFromObject(model);
+    const size = box.getSize(new THREE.Vector3());
+    if (size.x < 1e-4 || size.y < 1e-4 || size.z < 1e-4) return;
+    let sx;
+    let sy;
+    let sz;
+    if (uniform) {
+      const s = Math.min(tw / size.x, td / size.z, th / size.y);
+      sx = sy = sz = s;
+    } else {
+      sx = tw / size.x;
+      sy = th / size.y;
+      sz = td / size.z;
+    }
+    model.scale.set(sx, sy, sz);
+    model.updateMatrixWorld(true);
+    const box2 = new THREE.Box3().setFromObject(model);
+    const center = box2.getCenter(new THREE.Vector3());
+    model.position.x -= center.x;
+    model.position.z -= center.z;
+    model.position.y -= box2.min.y;
   }
 
   makeStructureMesh(s) {
     const g = new THREE.Group();
     if (s.kind === "tree") {
-      const trunkH = (s.h || 6) * 0.55;
-      const canopyR = s.r || 2.2;
-      const trunk = new THREE.Mesh(
-        new THREE.CylinderGeometry(0.35, 0.5, trunkH, 8),
-        toon("#6b3f1e"),
-      );
-      trunk.position.y = 0.575 + trunkH * 0.5;
-      trunk.castShadow = true;
-      trunk.receiveShadow = true;
-      const canopy = new THREE.Group();
-      const leaf = new THREE.Mesh(new THREE.SphereGeometry(canopyR, 10, 8), toon(s.color || "#3ecf6a"));
-      leaf.position.y = 0.575 + trunkH + canopyR * 0.55;
-      leaf.castShadow = true;
-      leaf.receiveShadow = true;
-      const leaf2 = new THREE.Mesh(
-        new THREE.SphereGeometry(canopyR * 0.72, 8, 6),
-        toon(s.color || "#2aad52"),
-      );
-      leaf2.position.set(canopyR * 0.25, leaf.position.y + canopyR * 0.2, -canopyR * 0.15);
-      leaf2.castShadow = true;
-      canopy.add(leaf, leaf2);
-      g.add(trunk, canopy);
-      g.userData.isTree = true;
-      g.userData.canopy = canopy;
+      const modelId = s.model || TREE_MODELS[Math.abs(s.id || 0) % TREE_MODELS.length];
+      const proto = this.gltfCache.get(`tree:${modelId}`);
+      if (proto) {
+        const model = proto.clone(true);
+        const h = s.h || 6;
+        const r = s.r || 2.2;
+        this.fitGltfToBox(model, r * 2.1, h, r * 2.1, { uniform: true });
+        model.position.y += 0.575;
+        g.add(model);
+        g.userData.isTree = true;
+        g.userData.canopy = model;
+      } else {
+        this.makeProceduralTree(g, s);
+      }
     } else {
+      const modelId = s.model || BUILDING_MODELS[Math.abs(s.id || 0) % BUILDING_MODELS.length];
+      const proto = this.gltfCache.get(`building:${modelId}`);
       const h = s.h || 8;
       const w = s.w || 8;
       const d = s.d || 8;
-      const col = toon(s.color || "#ff8ec4");
-      const dark = toon("#4a2040");
-      const glass = new THREE.MeshBasicMaterial({
-        color: "#7ec8ff",
-        transparent: true,
-        opacity: 0.35,
-        depthWrite: false,
-      });
-      const floor = new THREE.Mesh(new THREE.BoxGeometry(w, 0.25, d), dark);
-      floor.position.y = 0.7;
-      floor.receiveShadow = true;
-      const roof = new THREE.Mesh(new THREE.BoxGeometry(w * 1.06, 0.35, d * 1.06), toon("#fff1a8"));
-      roof.position.y = 0.575 + h + 0.2;
-      roof.castShadow = true;
-      roof.receiveShadow = true;
-      g.add(floor, roof);
-
-      const thick = 0.4;
-      const winW = Math.min(2.4, w * 0.28);
-      const winH = Math.min(2.2, h * 0.28);
-      const winY = 0.575 + h * 0.45;
-      const doorW = Math.min(2.1, w * 0.32);
-      const doorH = Math.min(h * 0.72, 3.2);
-      const mkWallFace = (axis, sign, door = false) => {
-        const alongX = axis === "z";
-        const len = alongX ? w : d;
-        const gapW = door ? doorW : winW;
-        const panel = (len * 0.5 - gapW * 0.5) * 0.5;
-        const off = gapW * 0.5 + panel;
-        for (const sgn of [-1, 1]) {
-          const wall = new THREE.Mesh(
-            alongX
-              ? new THREE.BoxGeometry(panel * 2, h, thick)
-              : new THREE.BoxGeometry(thick, h, panel * 2),
-            col,
-          );
-          wall.position.set(
-            alongX ? sgn * off : sign * (w * 0.5 - thick * 0.5),
-            0.575 + h * 0.5,
-            alongX ? sign * (d * 0.5 - thick * 0.5) : sgn * off,
-          );
-          wall.castShadow = true;
-          wall.receiveShadow = true;
-          g.add(wall);
-        }
-        if (door) {
-          const lintel = new THREE.Mesh(new THREE.BoxGeometry(doorW + 0.3, Math.max(0.4, h - doorH), thick), col);
-          lintel.position.set(0, 0.575 + h - Math.max(0.2, (h - doorH) * 0.5), sign * (d * 0.5 - thick * 0.5));
-          lintel.castShadow = true;
-          g.add(lintel);
-        } else {
-          const pane = new THREE.Mesh(new THREE.BoxGeometry(winW, winH, 0.08), glass);
-          pane.position.set(
-            alongX ? 0 : sign * (w * 0.5 - thick * 0.5),
-            winY,
-            alongX ? sign * (d * 0.5 - thick * 0.5) : 0,
-          );
-          g.add(pane);
-        }
-      };
-      mkWallFace("z", 1);
-      mkWallFace("z", -1, true);
-      mkWallFace("x", 1);
-      mkWallFace("x", -1);
-
-      // Ladder on +Z
-      const ladder = new THREE.Group();
-      const railMat = toon("#8b5a2b");
-      for (const lx of [-0.35, 0.35]) {
-        const rail = new THREE.Mesh(new THREE.BoxGeometry(0.08, h, 0.08), railMat);
-        rail.position.set(lx, 0.575 + h * 0.5, d * 0.5 + 0.55);
-        ladder.add(rail);
+      if (proto) {
+        const model = proto.clone(true);
+        // Fit footprint; allow roof a bit taller than collision for nicer silhouette
+        this.fitGltfToBox(model, w * 0.98, h * 1.15, d * 0.98, { uniform: true });
+        model.position.y += 0.575;
+        g.add(model);
+        this.addBuildingLadder(g, w, d, h);
+      } else {
+        this.makeProceduralBuilding(g, s);
       }
-      const steps = Math.max(6, (h / 0.7) | 0);
-      for (let i = 0; i < steps; i++) {
-        const step = new THREE.Mesh(new THREE.BoxGeometry(0.8, 0.06, 0.12), railMat);
-        step.position.set(0, 0.7 + i * (h / steps), d * 0.5 + 0.55);
-        ladder.add(step);
-      }
-      g.add(ladder);
     }
     g.position.set(s.x || 0, 0, s.z || 0);
     if (s.rotY) g.rotation.y = s.rotY;
     return g;
+  }
+
+  addBuildingLadder(g, w, d, h) {
+    const ladder = new THREE.Group();
+    const railMat = toon("#8b5a2b");
+    for (const lx of [-0.35, 0.35]) {
+      const rail = new THREE.Mesh(new THREE.BoxGeometry(0.08, h, 0.08), railMat);
+      rail.position.set(lx, 0.575 + h * 0.5, d * 0.5 + 0.55);
+      ladder.add(rail);
+    }
+    const steps = Math.max(6, (h / 0.7) | 0);
+    for (let i = 0; i < steps; i++) {
+      const step = new THREE.Mesh(new THREE.BoxGeometry(0.8, 0.06, 0.12), railMat);
+      step.position.set(0, 0.7 + i * (h / steps), d * 0.5 + 0.55);
+      ladder.add(step);
+    }
+    g.add(ladder);
+  }
+
+  makeProceduralTree(g, s) {
+    const trunkH = (s.h || 6) * 0.55;
+    const canopyR = s.r || 2.2;
+    const trunk = new THREE.Mesh(
+      new THREE.CylinderGeometry(0.35, 0.5, trunkH, 8),
+      toon("#6b3f1e"),
+    );
+    trunk.position.y = 0.575 + trunkH * 0.5;
+    trunk.castShadow = true;
+    trunk.receiveShadow = true;
+    const canopy = new THREE.Group();
+    const leaf = new THREE.Mesh(new THREE.SphereGeometry(canopyR, 10, 8), toon(s.color || "#3ecf6a"));
+    leaf.position.y = 0.575 + trunkH + canopyR * 0.55;
+    leaf.castShadow = true;
+    leaf.receiveShadow = true;
+    const leaf2 = new THREE.Mesh(
+      new THREE.SphereGeometry(canopyR * 0.72, 8, 6),
+      toon(s.color || "#2aad52"),
+    );
+    leaf2.position.set(canopyR * 0.25, leaf.position.y + canopyR * 0.2, -canopyR * 0.15);
+    leaf2.castShadow = true;
+    canopy.add(leaf, leaf2);
+    g.add(trunk, canopy);
+    g.userData.isTree = true;
+    g.userData.canopy = canopy;
+  }
+
+  makeProceduralBuilding(g, s) {
+    const h = s.h || 8;
+    const w = s.w || 8;
+    const d = s.d || 8;
+    const col = toon(s.color || "#ff8ec4");
+    const dark = toon("#4a2040");
+    const glass = new THREE.MeshBasicMaterial({
+      color: "#7ec8ff",
+      transparent: true,
+      opacity: 0.35,
+      depthWrite: false,
+    });
+    const floor = new THREE.Mesh(new THREE.BoxGeometry(w, 0.25, d), dark);
+    floor.position.y = 0.7;
+    floor.receiveShadow = true;
+    const roof = new THREE.Mesh(new THREE.BoxGeometry(w * 1.06, 0.35, d * 1.06), toon("#fff1a8"));
+    roof.position.y = 0.575 + h + 0.2;
+    roof.castShadow = true;
+    roof.receiveShadow = true;
+    g.add(floor, roof);
+
+    const thick = 0.4;
+    const winW = Math.min(2.4, w * 0.28);
+    const winH = Math.min(2.2, h * 0.28);
+    const winY = 0.575 + h * 0.45;
+    const doorW = Math.min(2.1, w * 0.32);
+    const doorH = Math.min(h * 0.72, 3.2);
+    const mkWallFace = (axis, sign, door = false) => {
+      const alongX = axis === "z";
+      const len = alongX ? w : d;
+      const gapW = door ? doorW : winW;
+      const panel = (len * 0.5 - gapW * 0.5) * 0.5;
+      const off = gapW * 0.5 + panel;
+      for (const sgn of [-1, 1]) {
+        const wall = new THREE.Mesh(
+          alongX
+            ? new THREE.BoxGeometry(panel * 2, h, thick)
+            : new THREE.BoxGeometry(thick, h, panel * 2),
+          col,
+        );
+        wall.position.set(
+          alongX ? sgn * off : sign * (w * 0.5 - thick * 0.5),
+          0.575 + h * 0.5,
+          alongX ? sign * (d * 0.5 - thick * 0.5) : sgn * off,
+        );
+        wall.castShadow = true;
+        wall.receiveShadow = true;
+        g.add(wall);
+      }
+      if (door) {
+        const lintel = new THREE.Mesh(new THREE.BoxGeometry(doorW + 0.3, Math.max(0.4, h - doorH), thick), col);
+        lintel.position.set(0, 0.575 + h - Math.max(0.2, (h - doorH) * 0.5), sign * (d * 0.5 - thick * 0.5));
+        lintel.castShadow = true;
+        g.add(lintel);
+      } else {
+        const pane = new THREE.Mesh(new THREE.BoxGeometry(winW, winH, 0.08), glass);
+        pane.position.set(
+          alongX ? 0 : sign * (w * 0.5 - thick * 0.5),
+          winY,
+          alongX ? sign * (d * 0.5 - thick * 0.5) : 0,
+        );
+        g.add(pane);
+      }
+    };
+    mkWallFace("z", 1);
+    mkWallFace("z", -1, true);
+    mkWallFace("x", 1);
+    mkWallFace("x", -1);
+    this.addBuildingLadder(g, w, d, h);
   }
 
   buildPadFromPieces(pieces, radius) {
