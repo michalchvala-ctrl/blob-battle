@@ -201,68 +201,119 @@ function makeLabel(text) {
     new THREE.SpriteMaterial({ map: tex, transparent: true, depthTest: true, depthWrite: false }),
   );
   spr.scale.set(2.4, 0.6, 1);
-  spr.position.y = 1.75;
+  spr.position.y = 1.35;
   spr.userData.tex = tex;
   return spr;
 }
 
+/** Low-poly human — feet at -0.62 so they sit on the pad when root is at sphere center. */
 export function createJelly(color, name) {
+  return createHuman(color, name);
+}
+
+export function createHuman(color, name) {
   const root = new THREE.Group();
   const body = new THREE.Group();
-  const mat = toon(color);
-  const belly = new THREE.Mesh(new THREE.SphereGeometry(0.72, 22, 16), mat);
-  belly.scale.set(1.05, 1.18, 1.05);
-  const bum = new THREE.Mesh(new THREE.SphereGeometry(0.52, 16, 12), mat);
-  bum.position.y = -0.55;
-  bum.scale.set(1.15, 0.7, 1.15);
+
+  const skin = toon("#e8b896");
+  const shirt = toon(color);
+  const pants = toon("#2c3e50");
+  const shoes = toon("#1a1a1a");
+  const hairC = toon("#3b2a1e");
   const eyeW = toon("#fff");
-  const eyeL = new THREE.Mesh(new THREE.SphereGeometry(0.18, 12, 10), eyeW);
-  const eyeR = eyeL.clone();
-  eyeL.position.set(-0.22, 0.22, 0.52);
-  eyeR.position.set(0.22, 0.22, 0.52);
   const pupilM = toon("#1a1020");
-  const pL = new THREE.Mesh(new THREE.SphereGeometry(0.08, 8, 8), pupilM);
+
+  // Proportions relative to physics sphere center (y=0 ≈ belly)
+  const hips = new THREE.Mesh(new THREE.BoxGeometry(0.42, 0.22, 0.28), pants);
+  hips.position.set(0, -0.28, 0);
+
+  const torso = new THREE.Mesh(new THREE.BoxGeometry(0.48, 0.55, 0.3), shirt);
+  torso.position.set(0, 0.12, 0);
+
+  const neck = new THREE.Mesh(new THREE.CylinderGeometry(0.08, 0.1, 0.12, 8), skin);
+  neck.position.set(0, 0.46, 0);
+
+  const head = new THREE.Mesh(new THREE.BoxGeometry(0.36, 0.4, 0.36), skin);
+  head.position.set(0, 0.72, 0);
+  const hair = new THREE.Mesh(new THREE.BoxGeometry(0.38, 0.16, 0.38), hairC);
+  hair.position.set(0, 0.18, -0.02);
+  head.add(hair);
+  const eyeL = new THREE.Mesh(new THREE.BoxGeometry(0.08, 0.08, 0.04), eyeW);
+  const eyeR = eyeL.clone();
+  eyeL.position.set(-0.09, 0.04, 0.19);
+  eyeR.position.set(0.09, 0.04, 0.19);
+  const pL = new THREE.Mesh(new THREE.BoxGeometry(0.045, 0.045, 0.03), pupilM);
   const pR = pL.clone();
-  pL.position.set(-0.22, 0.2, 0.66);
-  pR.position.set(0.22, 0.2, 0.66);
-  const mouth = new THREE.Mesh(new THREE.SphereGeometry(0.14, 10, 8), toon("#3a1020"));
-  mouth.scale.set(1.3, 0.45, 0.6);
-  mouth.position.set(0, -0.08, 0.62);
-  const armM = toon(color);
-  const armL = new THREE.Mesh(new THREE.SphereGeometry(0.22, 10, 8), armM);
-  const armR = armL.clone();
-  armL.position.set(-0.72, -0.05, 0.1);
-  armR.position.set(0.72, -0.05, 0.1);
+  pL.position.set(-0.09, 0.04, 0.22);
+  pR.position.set(0.09, 0.04, 0.22);
+  const mouth = new THREE.Mesh(new THREE.BoxGeometry(0.12, 0.03, 0.03), toon("#8b3a3a"));
+  mouth.position.set(0, -0.1, 0.19);
+  head.add(eyeL, eyeR, pL, pR, mouth);
 
-  // Weapon in right hand (Streľba mode) — detailed pistol
-  const gun = makePistolMesh(1.35);
-  gun.position.set(0.12, -0.08, 0.28);
-  gun.rotation.set(-0.25, 0.15, -0.35);
+  function makeArm(side) {
+    const arm = new THREE.Group();
+    const upper = new THREE.Mesh(new THREE.BoxGeometry(0.14, 0.38, 0.14), shirt);
+    upper.position.set(0, -0.16, 0);
+    const lower = new THREE.Mesh(new THREE.BoxGeometry(0.12, 0.34, 0.12), skin);
+    lower.position.set(0, -0.48, 0);
+    const hand = new THREE.Mesh(new THREE.BoxGeometry(0.12, 0.12, 0.14), skin);
+    hand.position.set(0, -0.68, 0.02);
+    arm.add(upper, lower, hand);
+    arm.position.set(side * 0.34, 0.32, 0);
+    arm.userData.hand = hand;
+    return arm;
+  }
+  const armL = makeArm(-1);
+  const armR = makeArm(1);
+
+  const gun = makePistolMesh(1.15);
+  gun.position.set(0.02, -0.02, 0.16);
+  gun.rotation.set(-0.15, 0.05, -0.2);
   gun.visible = false;
-  armR.add(gun);
+  armR.userData.hand.add(gun);
 
-  const back = new THREE.Mesh(new THREE.SphereGeometry(0.32, 10, 8), mat);
-  back.position.set(0, -0.12, -0.52);
-  body.add(belly, bum, eyeL, eyeR, pL, pR, mouth, armL, armR, back);
+  function makeLeg(side) {
+    const leg = new THREE.Group();
+    const thigh = new THREE.Mesh(new THREE.BoxGeometry(0.16, 0.38, 0.18), pants);
+    thigh.position.set(0, -0.18, 0);
+    const shin = new THREE.Mesh(new THREE.BoxGeometry(0.14, 0.34, 0.16), pants);
+    shin.position.set(0, -0.52, 0);
+    const foot = new THREE.Mesh(new THREE.BoxGeometry(0.16, 0.1, 0.28), shoes);
+    foot.position.set(0, -0.72, 0.04);
+    leg.add(thigh, shin, foot);
+    leg.position.set(side * 0.12, -0.38, 0);
+    return leg;
+  }
+  const legL = makeLeg(-1);
+  const legR = makeLeg(1);
+
+  body.add(hips, torso, neck, head, armL, armR, legL, legR);
   body.traverse((o) => {
     if (o.isMesh) {
       o.castShadow = true;
       o.receiveShadow = true;
     }
   });
-  const label = makeLabel(name || "Želé");
+
+  const label = makeLabel(name || "Hráč");
   const shadow = new THREE.Mesh(
-    new THREE.CircleGeometry(0.7, 20),
+    new THREE.CircleGeometry(0.55, 20),
     new THREE.MeshBasicMaterial({ color: "#000", transparent: true, opacity: 0.28, depthWrite: false }),
   );
   shadow.rotation.x = -Math.PI / 2;
-  const bomb = new THREE.Mesh(new THREE.SphereGeometry(0.22, 12, 10), toon("#111", { emissive: "#ff2a2a", emissiveIntensity: 0.8 }));
+  const bomb = new THREE.Mesh(
+    new THREE.SphereGeometry(0.18, 12, 10),
+    toon("#111", { emissive: "#ff2a2a", emissiveIntensity: 0.8 }),
+  );
+  bomb.position.set(0, 0.55, -0.35);
   bomb.visible = false;
   root.add(body, label, shadow, bomb);
   root.userData = {
     body,
     armL,
     armR,
+    legL,
+    legR,
     gun,
     mouth,
     pL,
@@ -275,6 +326,7 @@ export function createJelly(color, name) {
     squash: 1,
     landSquash: 0,
     prevVy: 0,
+    isHuman: true,
   };
   return root;
 }
@@ -1701,17 +1753,12 @@ export class GameWorld {
       ud.prevVy = p.vy;
 
       const jelly = ud.landSquash;
-      let targetSy = p.alive ? 1 + Math.abs(wobble) * 0.08 : 0.7;
-      let targetSx = p.alive ? 1 - Math.abs(wobble) * 0.06 : 1.2;
-      let targetSz = targetSx;
+      let targetSy = p.alive ? 1 : 0.85;
+      let targetSx = 1;
+      let targetSz = 1;
       if (jelly > 0.01) {
-        targetSy = 1 - jelly * 0.42;
-        targetSx = 1 + jelly * 0.32;
-        targetSz = targetSx;
-      } else if (p.alive && p.vy > 0.8) {
-        // stretch slightly while rising, not while digging down
-        targetSy += Math.min(0.12, p.vy * 0.02);
-        targetSx -= Math.min(0.08, p.vy * 0.012);
+        targetSy = 1 - jelly * 0.12;
+        targetSx = 1 + jelly * 0.08;
         targetSz = targetSx;
       }
       ud.body.position.y = THREE.MathUtils.lerp(ud.body.position.y, 0, 0.3);
@@ -1719,50 +1766,55 @@ export class GameWorld {
       ud.body.scale.x = THREE.MathUtils.lerp(ud.body.scale.x, targetSx, 0.28);
       ud.body.scale.z = THREE.MathUtils.lerp(ud.body.scale.z, targetSz, 0.28);
 
+      // Walk cycle for legs / opposite arm swing
+      const stride = p.alive && spd > 0.6 ? Math.sin(t * 9) * Math.min(0.7, spd * 0.08) : 0;
+      if (ud.legL && ud.legR) {
+        ud.legL.rotation.x = stride;
+        ud.legR.rotation.x = -stride;
+      }
+
       const guns = this.gunsMode && p.alive;
       const wpn = p.weapon || "pistol";
+      const gunParent = ud.armR.userData?.hand || ud.armR;
       if (ud.gun) {
-        // Swap third-person prop when weapon changes
         if (ud.gunKind !== wpn) {
-          ud.armR.remove(ud.gun);
+          gunParent.remove(ud.gun);
           let prop;
           if (wpn === "sniper") {
-            prop = makeSniperMesh(1.1);
-            prop.position.set(0.1, -0.05, 0.22);
-            prop.rotation.set(-0.2, 0.1, -0.25);
+            prop = makeSniperMesh(0.95);
+            prop.position.set(0.02, -0.02, 0.2);
+            prop.rotation.set(-0.15, 0.05, -0.15);
           } else if (wpn === "knife") {
-            prop = makeKnifeMesh(1.2);
-            prop.position.set(0.08, -0.02, 0.25);
-            prop.rotation.set(-0.4, 0.5, -0.8);
+            prop = makeKnifeMesh(1.05);
+            prop.position.set(0.02, 0, 0.12);
+            prop.rotation.set(-0.3, 0.4, -0.6);
           } else {
-            prop = makePistolMesh(1.35);
-            prop.position.set(0.12, -0.08, 0.28);
-            prop.rotation.set(-0.25, 0.15, -0.35);
+            prop = makePistolMesh(1.15);
+            prop.position.set(0.02, -0.02, 0.16);
+            prop.rotation.set(-0.15, 0.05, -0.2);
           }
           ud.gun = prop;
           ud.gunKind = wpn;
-          ud.armR.add(prop);
+          gunParent.add(prop);
         }
         ud.gun.visible = guns;
       }
       if (guns) {
-        // Aim pose — right arm forward with weapon
-        const kick = p.shoot ? -0.55 : -0.25;
+        const kick = p.shoot ? -1.05 : -0.75;
         ud.armR.rotation.x = kick;
-        ud.armR.rotation.z = -0.35;
-        ud.armR.rotation.y = -0.15;
-        ud.armL.rotation.x = -0.2;
-        ud.armL.rotation.z = 0.35;
+        ud.armR.rotation.z = -0.15;
+        ud.armR.rotation.y = -0.05;
+        ud.armL.rotation.x = -0.35;
+        ud.armL.rotation.z = 0.2;
         if (ud.gun) {
-          ud.gun.rotation.x = p.shoot ? -0.35 : -0.1;
-          ud.gun.position.z = p.shoot ? 0.22 : 0.28;
+          ud.gun.rotation.x = p.shoot ? -0.25 : -0.1;
         }
       } else {
-        ud.armL.rotation.x = p.punch ? -0.4 : -wobble * 0.9;
-        ud.armL.rotation.z = p.punch ? 0.9 : 0.15 + wobble * 0.2;
+        ud.armL.rotation.x = p.punch ? -0.9 : -stride * 0.85;
+        ud.armL.rotation.z = p.punch ? 0.5 : 0.08;
         ud.armL.rotation.y = 0;
-        ud.armR.rotation.x = p.punch ? -1.1 : wobble * 0.9;
-        ud.armR.rotation.z = p.punch ? -1.3 : -0.15 - wobble * 0.2;
+        ud.armR.rotation.x = p.punch ? -1.2 : stride * 0.85;
+        ud.armR.rotation.z = p.punch ? -0.55 : -0.08;
         ud.armR.rotation.y = 0;
       }
       ud.bomb.visible = false;
