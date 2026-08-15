@@ -258,6 +258,44 @@ button.ghost {
   right: 0;
 }
 
+.nade-charge {
+  position: absolute;
+  left: 50%;
+  bottom: 110px;
+  transform: translateX(-50%);
+  width: min(200px, 50vw);
+  display: grid;
+  grid-template-columns: auto 1fr;
+  align-items: center;
+  gap: 8px;
+  background: #120418cc;
+  border: 1px solid #ffffff22;
+  border-radius: 12px;
+  padding: 8px 12px;
+  pointer-events: none;
+  z-index: 5;
+}
+
+.nade-label {
+  font-weight: 800;
+  font-size: 12px;
+  color: #9dffb0;
+}
+
+.nade-bar {
+  height: 10px;
+  background: #ffffff18;
+  border-radius: 999px;
+  overflow: hidden;
+}
+
+.nade-fill {
+  height: 100%;
+  width: 0%;
+  background: linear-gradient(90deg, #3ecf6a, #d6ff4a);
+  border-radius: 999px;
+}
+
 .hp-wrap {
   position: absolute;
   left: 50%;

@@ -16,6 +16,10 @@ const keys = Object.create(null);
 let jumpQueued = false;
 let punchQueued = false;
 let dashQueued = false;
+let grenadeQueued = false;
+let grenadeCharge = 0;
+let grenadeHolding = false;
+let grenadeHoldStart = 0;
 let pointerLocked = false;
 let lookIgnoreUntil = 0;
 
@@ -237,6 +241,7 @@ socket.on("st", (st) => {
   const showGunsHud = gunsOn && !!me?.alive;
   $("hp-wrap").classList.toggle("hidden", !showGunsHud);
   $("crosshair").classList.toggle("hidden", !showGunsHud);
+  if (!showGunsHud) $("nade-charge").classList.add("hidden");
   if (gunsOn && me) {
     const hp = Math.max(0, me.hp ?? 100);
     $("hp-fill").style.width = `${hp}%`;
@@ -244,7 +249,7 @@ socket.on("st", (st) => {
   }
   if ($("hint-bar")) {
     $("hint-bar").textContent = gunsOn
-      ? "WASD · skok · klik STREĽBA · Shift dash · Esc uvoľní myš · reset po 30 zabitiach"
+      ? "WASD · skok · klik STREĽBA · G granát (drž) · Shift dash · reset po 30 zabitiach"
       : "WASD chôdza · koliesko zoom · skok · klik úder · Shift dash · Esc uvoľní myš";
   }
 
@@ -363,6 +368,13 @@ function handleEvent(ev) {
     text = ev.by ? `${ev.by} zostrelil ${ev.victim}` : `${ev.victim} vypadol`;
     sfx.fall();
     world.addShake(0.4);
+  } else if (ev.type === "grenadeThrow") {
+    text = `${ev.by} hodil granát`;
+    sfx.nade();
+  } else if (ev.type === "grenadeBoom") {
+    text = "💥 Granát!";
+    sfx.boom();
+    world.spawnGrenadeBoom?.(ev);
   } else if (ev.type === "medkit") {
     text = `${ev.by} zobral lekárničku (${ev.hp}%)`;
     sfx.pass();
@@ -391,6 +403,10 @@ window.addEventListener("keydown", (e) => {
     return;
   }
   if (e.code === "Space") jumpQueued = true;
+  if (e.code === "KeyG" && world.gunsMode && playing && !world.spectating && !e.repeat) {
+    grenadeHolding = true;
+    grenadeHoldStart = performance.now();
+  }
   if (e.code === "ShiftLeft" || e.code === "ShiftRight") {
     dashQueued = true;
     if (playing) sfx.dash();
@@ -398,6 +414,13 @@ window.addEventListener("keydown", (e) => {
 });
 window.addEventListener("keyup", (e) => {
   keys[e.code] = false;
+  if (e.code === "KeyG" && grenadeHolding) {
+    const held = (performance.now() - grenadeHoldStart) / 1400;
+    grenadeCharge = Math.max(0.15, Math.min(1, held));
+    grenadeQueued = true;
+    grenadeHolding = false;
+    $("nade-charge").classList.add("hidden");
+  }
 });
 
 $("view").addEventListener("mousedown", (e) => {
@@ -442,20 +465,30 @@ function lockPointer() {
 
 setInterval(() => {
   if (!myId) return;
+  if (grenadeHolding && world.gunsMode && playing) {
+    const held = (performance.now() - grenadeHoldStart) / 1400;
+    const c = Math.max(0.15, Math.min(1, held));
+    $("nade-charge").classList.remove("hidden");
+    $("nade-fill").style.width = `${Math.round(c * 100)}%`;
+  }
   const mx = (keys.KeyD || keys.ArrowRight ? 1 : 0) - (keys.KeyA || keys.ArrowLeft ? 1 : 0);
   const mz = (keys.KeyW || keys.ArrowUp ? 1 : 0) - (keys.KeyS || keys.ArrowDown ? 1 : 0);
   socket.emit("in", {
     mx,
     mz,
     yaw: world.yaw,
+    pitch: world.pitch,
     jump: jumpQueued,
     punch: punchQueued,
     shoot: punchQueued,
     dash: dashQueued,
+    grenade: grenadeQueued,
+    grenadeCharge: grenadeCharge,
   });
   jumpQueued = false;
   punchQueued = false;
   dashQueued = false;
+  grenadeQueued = false;
 }, 1000 / 30);
 
 function loop() {

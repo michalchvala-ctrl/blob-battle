@@ -655,6 +655,59 @@ export class GameWorld {
     return g;
   }
 
+  makeGrenadeMesh(d) {
+    const g = new THREE.Group();
+    const body = new THREE.Mesh(new THREE.SphereGeometry(0.28, 12, 10), toon("#2f6b3a"));
+    body.castShadow = true;
+    const pin = new THREE.Mesh(new THREE.CylinderGeometry(0.04, 0.04, 0.22, 6), toon("#c0c4c8"));
+    pin.position.y = 0.28;
+    const lever = new THREE.Mesh(new THREE.BoxGeometry(0.08, 0.22, 0.04), toon("#8a9098"));
+    lever.position.set(0.12, 0.2, 0);
+    g.add(body, pin, lever);
+    g.position.set(d.x || 0, d.y || 0, d.z || 0);
+    return g;
+  }
+
+  spawnGrenadeBoom(ev) {
+    if (!ev) return;
+    const origin = new THREE.Vector3(ev.x, ev.y || 0.5, ev.z);
+    const ring = new THREE.Mesh(
+      new THREE.RingGeometry(0.5, Math.min(30, ev.r || 30), 48),
+      new THREE.MeshBasicMaterial({ color: "#ff9e00", transparent: true, opacity: 0.55, side: THREE.DoubleSide }),
+    );
+    ring.rotation.x = -Math.PI / 2;
+    ring.position.copy(origin);
+    ring.position.y = 0.7;
+    this.scene.add(ring);
+    const flash = new THREE.Mesh(
+      new THREE.SphereGeometry(1.2, 12, 10),
+      new THREE.MeshBasicMaterial({ color: "#ffe66d", transparent: true, opacity: 0.85 }),
+    );
+    flash.position.copy(origin);
+    this.scene.add(flash);
+    this.addShake(0.7);
+    const born = performance.now();
+    const tick = () => {
+      const age = (performance.now() - born) / 520;
+      if (age >= 1) {
+        this.scene.remove(ring);
+        this.scene.remove(flash);
+        ring.geometry.dispose();
+        ring.material.dispose();
+        flash.geometry.dispose();
+        flash.material.dispose();
+        return;
+      }
+      const s = 0.2 + age * 1.2;
+      ring.scale.set(s, s, s);
+      ring.material.opacity = 0.55 * (1 - age);
+      flash.scale.setScalar(1 + age * 8);
+      flash.material.opacity = 0.85 * (1 - age);
+      requestAnimationFrame(tick);
+    };
+    requestAnimationFrame(tick);
+  }
+
   spawnShotTrail(ev) {
     if (!ev) return;
     // Flying projectile (50% slower than old instant beam feel)
@@ -726,6 +779,7 @@ export class GameWorld {
   makeDebrisMesh(d) {
     if (d.kind === "goat") return this.makeGoatMesh(d);
     if (d.kind === "medkit") return this.makeMedkitMesh(d);
+    if (d.kind === "grenade") return this.makeGrenadeMesh(d);
     const color = d.color || "#ff9e00";
     let geo;
     if (d.kind === "sphere") {

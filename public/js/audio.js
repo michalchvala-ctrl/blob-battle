@@ -49,4 +49,8 @@ export const sfx = {
     beep(220, 0.12, "sawtooth", 0.08, -120);
     beep(90, 0.16, "square", 0.07, -40);
   },
+  nade: () => {
+    beep(160, 0.08, "triangle", 0.05, -40);
+    beep(90, 0.12, "sawtooth", 0.04, 30);
+  },
 };
