@@ -2200,15 +2200,15 @@ export class GameWorld {
 
   updateFpsGun() {
     if (!this.fpsPistol) {
-      this.fpsPistol = makePistolMesh(2.4);
+      this.fpsPistol = makePistolMesh(0.85);
       this.camera.add(this.fpsPistol);
     }
     if (!this.fpsSniper) {
-      this.fpsSniper = makeSniperMesh(2.8);
+      this.fpsSniper = makeSniperMesh(0.95);
       this.camera.add(this.fpsSniper);
     }
     if (!this.fpsKnife) {
-      this.fpsKnife = makeKnifeMesh(1.1);
+      this.fpsKnife = makeKnifeMesh(0.7);
       this.camera.add(this.fpsKnife);
     }
     this.fpsGun = this.fpsPistol;
@@ -2220,12 +2220,12 @@ export class GameWorld {
     this.fpsKnife.visible = show && w === "knife";
 
     const kick = this._gunKick || 0;
-    this.fpsPistol.position.set(0.28, -0.22 - kick * 0.04, -0.48 + kick * 0.06);
-    this.fpsPistol.rotation.set(0.05 + kick * 0.25, Math.PI + 0.08, 0.05);
-    this.fpsSniper.position.set(0.2, -0.24 - kick * 0.05, -0.62 + kick * 0.08);
-    this.fpsSniper.rotation.set(0.02 + kick * 0.3, Math.PI + 0.02, 0.02);
-    this.fpsKnife.position.set(0.22, -0.18, -0.38);
-    this.fpsKnife.rotation.set(0.2, 0.35, 0.55);
+    this.fpsPistol.position.set(0.22, -0.18 - kick * 0.03, -0.42 + kick * 0.04);
+    this.fpsPistol.rotation.set(0.04 + kick * 0.18, Math.PI + 0.06, 0.04);
+    this.fpsSniper.position.set(0.16, -0.2 - kick * 0.04, -0.52 + kick * 0.05);
+    this.fpsSniper.rotation.set(0.02 + kick * 0.2, Math.PI + 0.02, 0.02);
+    this.fpsKnife.position.set(0.18, -0.14, -0.32);
+    this.fpsKnife.rotation.set(0.15, 0.3, 0.45);
     this._gunKick = Math.max(0, kick - 0.08);
   }
 
