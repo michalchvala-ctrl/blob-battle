@@ -245,7 +245,12 @@ socket.on("st", (st) => {
     world.hasSniper = !!me.hasSniper;
     world.weapon = me.weapon || "knife";
     world.ammo = me.ammo ?? 0;
-    world.inVehicle = !!me.vehicleId;
+    const nowInCar = !!me.vehicleId;
+    if (nowInCar && !world.inVehicle) {
+      world.yaw = me.yaw || world.yaw;
+      world.snapCam = true;
+    }
+    world.inVehicle = nowInCar;
   } else {
     world.inVehicle = false;
   }
@@ -278,7 +283,7 @@ socket.on("st", (st) => {
   if ($("hint-bar")) {
     $("hint-bar").textContent = gunsOn
       ? world.inVehicle
-        ? "Auto: WASD jazda · Shift turbo · E vystúp · pohľad z kabíny"
+        ? "Auto: WASD · Shift turbo · E vystúp · kamera za autom"
         : "1 nôž · 2 pištoľ · 3 odstrel. · E auto · G dym · Shift beh"
       : "WASD · skok · klik úder · Shift beh · Esc uvoľní myš";
   }

@@ -497,8 +497,8 @@ export class GameRoom {
       for (let iz = -4; iz <= 4; iz++) {
         // Open plaza in the middle for fights / spawns
         if (Math.abs(ix) <= 1 && Math.abs(iz) <= 1) continue;
-        const x = ix * (cell + street) + ((ix * 3 + iz) % 5) - 2;
-        const z = iz * (cell + street) + ((ix + iz * 5) % 5) - 2;
+        const x = ix * (cell + street);
+        const z = iz * (cell + street);
         if (Math.hypot(x, z) < 28) continue;
         if (Math.abs(x) > 135 || Math.abs(z) > 135) continue;
         const tall = (n + ix + iz) % 4 === 0;
@@ -525,14 +525,14 @@ export class GameRoom {
         n++;
       }
     }
-    // Street trees along grid lines
-    for (let i = 0; i < 56; i++) {
-      const a = (i / 56) * Math.PI * 2 + i * 0.11;
-      const rr = 30 + (i % 9) * 12;
+    // Street trees along outer rings (not blocking road corridors)
+    for (let i = 0; i < 40; i++) {
+      const a = (i / 40) * Math.PI * 2 + i * 0.09;
+      const rr = 48 + (i % 7) * 14;
       const x = Math.cos(a) * rr;
       const z = Math.sin(a) * rr;
       if (Math.abs(x) > 140 || Math.abs(z) > 140) continue;
-      if (this.tooCloseToStructure(x, z, 7, items)) continue;
+      if (this.tooCloseToStructure(x, z, 8, items)) continue;
       items.push({
         id: n++,
         kind: "tree",
@@ -545,67 +545,72 @@ export class GameRoom {
       });
     }
 
-    // Continuous Kenney road grid (tiles abut — no gaps)
-    const TILE = 10;
-    const grid = cell + street; // 40
-    for (let ix = -4; ix <= 4; ix++) {
-      const x = ix * grid;
-      for (let z = -140; z <= 140; z += TILE) {
-        if (Math.abs(x) > 140 || Math.abs(z) > 140) continue;
-        if (Math.hypot(x, z) < 18) continue;
-        const onCross = Math.abs(((z % grid) + grid) % grid) < 0.01 || Math.abs((((z % grid) + grid) % grid) - grid) < 0.01;
-        items.push({
-          id: n++,
-          kind: "road",
-          model: onCross ? "road_crossroad" : "road_straight",
-          x,
-          z,
-          w: TILE,
-          d: TILE,
-          rotY: 0,
-        });
-      }
+    // Roads BETWEEN city blocks (street corridors), not through buildings
+    const pitch = cell + street; // 40
+    const roadW = street - 1; // ~11 — fits the gap between building faces
+    const roadHalfLen = 148;
+    // N–S streets (between columns of buildings)
+    for (let ix = -5; ix <= 4; ix++) {
+      const x = (ix + 0.5) * pitch;
+      if (Math.abs(x) > 145) continue;
+      items.push({
+        id: n++,
+        kind: "road",
+        model: "strip",
+        x,
+        z: 0,
+        w: roadW,
+        d: roadHalfLen * 2,
+        rotY: 0,
+      });
     }
-    for (let iz = -4; iz <= 4; iz++) {
-      const z = iz * grid;
-      for (let x = -140; x <= 140; x += TILE) {
-        if (Math.abs(x) > 140 || Math.abs(z) > 140) continue;
-        if (Math.hypot(x, z) < 18) continue;
-        // Skip cells already covered by N–S roads
-        const onVert = Math.abs(((x % grid) + grid) % grid) < 0.01 || Math.abs((((x % grid) + grid) % grid) - grid) < 0.01;
-        if (onVert) continue;
-        items.push({
-          id: n++,
-          kind: "road",
-          model: "road_straight",
-          x,
-          z,
-          w: TILE,
-          d: TILE,
-          rotY: Math.PI / 2,
-        });
-      }
+    // E–W streets (between rows of buildings)
+    for (let iz = -5; iz <= 4; iz++) {
+      const z = (iz + 0.5) * pitch;
+      if (Math.abs(z) > 145) continue;
+      items.push({
+        id: n++,
+        kind: "road",
+        model: "strip",
+        x: 0,
+        z,
+        w: roadHalfLen * 2,
+        d: roadW,
+        rotY: 0,
+      });
     }
+    // Center plaza ring road
+    items.push({
+      id: n++,
+      kind: "road",
+      model: "strip",
+      x: 0,
+      z: 0,
+      w: 36,
+      d: 36,
+      rotY: 0,
+      plaza: true,
+    });
 
-    // Driveable cars parked along roads
+    // Driveable cars parked on street edges
     const carModels = ["BasicCar", "Taxi", "CopCar", "SimpleCarShort", "RaceCar"];
     const carSpawns = [];
-    for (let i = 0; i < 24; i++) {
-      const alongNS = i % 2 === 0;
-      const lane = ((i / 2) | 0) - 5;
-      const x = alongNS ? lane * grid + 6 : (lane * grid);
-      const z = alongNS ? (lane % 5) * grid + 8 : lane * grid + 6;
-      if (Math.abs(x) > 125 || Math.abs(z) > 125) continue;
-      if (Math.hypot(x, z) < 28) continue;
+    for (let i = 0; i < 20; i++) {
+      const ns = i % 2 === 0;
+      const lane = ((i / 2) | 0) - 4;
+      const x = ns ? (lane + 0.5) * pitch + (roadW * 0.28) * (i % 2 === 0 ? 1 : -1) : lane * pitch;
+      const z = ns ? ((i % 5) - 2) * pitch : (lane + 0.5) * pitch + roadW * 0.28;
+      if (Math.abs(x) > 120 || Math.abs(z) > 120) continue;
+      if (Math.hypot(x, z) < 30) continue;
       if (this.tooCloseToStructure(x, z, 5, items)) continue;
       carSpawns.push({
         model: carModels[i % carModels.length],
         x,
         z,
         w: 4.2,
-        h: 1.55,
+        h: 1.6,
         d: 2.0,
-        rotY: alongNS ? 0 : Math.PI / 2,
+        rotY: ns ? 0 : Math.PI / 2,
         color: ["#d64545", "#f0c418", "#2a5caa", "#6b7280", "#c0392b"][i % 5],
       });
     }
@@ -622,7 +627,7 @@ export class GameRoom {
     }
 
     this.layout.structures = items;
-    this.layoutKey += `|city2:${items.length}:b${items.filter((s) => s.kind === "building").length}:v${carSpawns.length}:r${items.filter((s) => s.kind === "road").length}`;
+    this.layoutKey += `|city3:${items.length}:b${items.filter((s) => s.kind === "building").length}:v${carSpawns.length}:r${items.filter((s) => s.kind === "road").length}`;
 
     for (const s of items) {
       if (s.kind === "building") {
@@ -666,16 +671,16 @@ export class GameRoom {
     for (const v of this.vehicles || []) this.world.removeBody(v);
     this.vehicles = [];
     for (const s of spawns || []) {
-      const hw = (s.w || 4.2) * 0.5;
-      const hh = 0.42; // low collider — keeps body above asphalt
-      const hd = (s.d || 2.0) * 0.5;
+      const hw = (s.w || 4.2) * 0.48;
+      const hh = 0.55;
+      const hd = (s.d || 2.0) * 0.48;
+      const rideY = PLATFORM_TOP + hh + 0.08;
       const body = new CANNON.Body({
-        mass: 90,
+        mass: 0, // kinematic drive — never sinks into asphalt
+        type: CANNON.Body.KINEMATIC,
         material: this.boxMat,
         shape: new CANNON.Box(new CANNON.Vec3(hw, hh, hd)),
-        position: new CANNON.Vec3(s.x, PLATFORM_TOP + hh + 0.06, s.z),
-        linearDamping: 0.08,
-        angularDamping: 0.98,
+        position: new CANNON.Vec3(s.x, rideY, s.z),
         fixedRotation: true,
       });
       const yaw = s.rotY || 0;
@@ -684,14 +689,14 @@ export class GameRoom {
         id: this.debrisNextId++,
         kind: "vehicle",
         model: s.model || "BasicCar",
-        color: s.color || "#c44",
+        color: s.color || "#d64545",
         sx: s.w || 4.2,
-        sy: s.h || 1.55,
+        sy: s.h || 1.6,
         sz: s.d || 2.0,
         yaw,
         speed: 0,
         driverId: null,
-        rideY: PLATFORM_TOP + hh + 0.06,
+        rideY,
       };
       this.world.addBody(body);
       this.vehicles.push(body);
@@ -2056,7 +2061,6 @@ export class GameRoom {
     let speed = v.userData.speed || 0;
     const throttle = p.input.mz || 0;
     const steer = -(p.input.mx || 0);
-    // Faster than sprint run (~15) — cars feel quick
     const maxSpd = p.input.sprint ? 62 : 46;
     if (throttle > 0.08) speed = this.approach(speed, maxSpd * throttle, 78 * dt);
     else if (throttle < -0.08) speed = this.approach(speed, -maxSpd * 0.4 * Math.abs(throttle), 70 * dt);
@@ -2069,22 +2073,25 @@ export class GameRoom {
     const yaw = v.userData.yaw || 0;
     const fx = -Math.sin(yaw);
     const fz = -Math.cos(yaw);
-    v.velocity.x = fx * speed;
-    v.velocity.z = fz * speed;
-    v.velocity.y = 0;
-    const rideY = v.userData.rideY ?? PLATFORM_TOP + 0.5;
+    const rideY = v.userData.rideY ?? PLATFORM_TOP + 0.63;
+    v.position.x += fx * speed * dt;
+    v.position.z += fz * speed * dt;
     v.position.y = rideY;
+    v.velocity.set(fx * speed, 0, fz * speed);
     v.quaternion.setFromEuler(0, yaw, 0);
     v.userData.speed = speed;
-    v.wakeUp();
 
-    // Driver seated — camera follows this height
-    p.body.position.set(v.position.x, rideY + 0.55, v.position.z);
-    p.body.velocity.set(v.velocity.x, 0, v.velocity.z);
+    p.body.position.set(v.position.x, rideY + 0.35, v.position.z);
+    p.body.velocity.set(fx * speed, 0, fz * speed);
     p.yaw = yaw;
   }
 
   attachDriversToVehicles() {
+    for (const v of this.vehicles || []) {
+      const rideY = v.userData.rideY ?? PLATFORM_TOP + 0.63;
+      v.position.y = rideY;
+      v.velocity.y = 0;
+    }
     for (const p of this.players.values()) {
       if (!p.alive || !p.vehicleId) continue;
       const v = this.findVehicle(p.vehicleId);
@@ -2093,10 +2100,8 @@ export class GameRoom {
         p.body.collisionResponse = true;
         continue;
       }
-      const rideY = v.userData.rideY ?? PLATFORM_TOP + 0.5;
-      v.position.y = rideY;
-      v.velocity.y = 0;
-      p.body.position.set(v.position.x, rideY + 0.55, v.position.z);
+      const rideY = v.userData.rideY ?? PLATFORM_TOP + 0.63;
+      p.body.position.set(v.position.x, rideY + 0.35, v.position.z);
       p.body.velocity.set(v.velocity.x, 0, v.velocity.z);
     }
   }
@@ -2108,11 +2113,13 @@ export class GameRoom {
       speed = this.approach(speed, 0, 22 * dt);
       v.userData.speed = speed;
       const yaw = v.userData.yaw || 0;
-      v.velocity.x = -Math.sin(yaw) * speed;
-      v.velocity.z = -Math.cos(yaw) * speed;
-      v.velocity.y = 0;
-      const rideY = v.userData.rideY ?? PLATFORM_TOP + 0.5;
+      const fx = -Math.sin(yaw);
+      const fz = -Math.cos(yaw);
+      const rideY = v.userData.rideY ?? PLATFORM_TOP + 0.63;
+      v.position.x += fx * speed * dt;
+      v.position.z += fz * speed * dt;
       v.position.y = rideY;
+      v.velocity.set(fx * speed, 0, fz * speed);
       v.quaternion.setFromEuler(0, yaw, 0);
     }
   }
