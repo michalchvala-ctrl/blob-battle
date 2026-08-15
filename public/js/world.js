@@ -220,7 +220,7 @@ export class GameWorld {
     this.platform = null;
   }
 
-  buildArena(radius, mode = "sumo", shards = null, pieces = null, layoutKey = "") {
+  buildArena(radius, mode = "sumo", shards = null, pieces = null, layoutKey = "", structures = null) {
     this.baseRadius = radius;
     this.platformRadius = radius;
     this.fitViewDistance();
@@ -230,6 +230,7 @@ export class GameWorld {
     while (this.props.children.length) this.props.remove(this.props.children[0]);
     this.boxMeshes = new Map();
     this.debrisMeshes = new Map();
+    this.clearStructures();
     this.pad.scale.set(1, 1, 1);
 
     if (this.hillMode && shards?.length) {
@@ -239,6 +240,7 @@ export class GameWorld {
 
     if (pieces?.length) {
       this.buildPadFromPieces(pieces, radius);
+      this.buildStructures(structures);
       return;
     }
 
@@ -256,6 +258,82 @@ export class GameWorld {
     icing.receiveShadow = true;
     this.pad.add(top, rim, icing);
     this.platform = top;
+    this.buildStructures(structures);
+  }
+
+  clearStructures() {
+    if (!this.structureGroup) {
+      this.structureGroup = new THREE.Group();
+      this.arena.add(this.structureGroup);
+    }
+    while (this.structureGroup.children.length) {
+      const c = this.structureGroup.children[0];
+      this.structureGroup.remove(c);
+      c.traverse?.((o) => o.geometry?.dispose?.());
+    }
+  }
+
+  buildStructures(list) {
+    this.clearStructures();
+    if (!list?.length) return;
+    for (const s of list) {
+      this.structureGroup.add(this.makeStructureMesh(s));
+    }
+  }
+
+  makeStructureMesh(s) {
+    const g = new THREE.Group();
+    if (s.kind === "tree") {
+      const trunkH = (s.h || 6) * 0.55;
+      const canopyR = s.r || 2.2;
+      const trunk = new THREE.Mesh(
+        new THREE.CylinderGeometry(0.35, 0.5, trunkH, 8),
+        toon("#6b3f1e"),
+      );
+      trunk.position.y = 0.575 + trunkH * 0.5;
+      trunk.castShadow = true;
+      trunk.receiveShadow = true;
+      const leaf = new THREE.Mesh(new THREE.SphereGeometry(canopyR, 10, 8), toon(s.color || "#3ecf6a"));
+      leaf.position.y = 0.575 + trunkH + canopyR * 0.55;
+      leaf.castShadow = true;
+      leaf.receiveShadow = true;
+      const leaf2 = new THREE.Mesh(
+        new THREE.SphereGeometry(canopyR * 0.72, 8, 6),
+        toon(s.color || "#2aad52"),
+      );
+      leaf2.position.set(canopyR * 0.25, leaf.position.y + canopyR * 0.2, -canopyR * 0.15);
+      leaf2.castShadow = true;
+      g.add(trunk, leaf, leaf2);
+    } else {
+      const h = s.h || 8;
+      const w = s.w || 8;
+      const d = s.d || 8;
+      const body = new THREE.Mesh(new THREE.BoxGeometry(w, h, d), toon(s.color || "#ff8ec4"));
+      body.position.y = 0.575 + h * 0.5;
+      body.castShadow = true;
+      body.receiveShadow = true;
+      const roof = new THREE.Mesh(
+        new THREE.BoxGeometry(w * 1.08, Math.min(2.2, h * 0.18), d * 1.08),
+        toon("#fff1a8"),
+      );
+      roof.position.y = 0.575 + h + Math.min(1.1, h * 0.09);
+      roof.castShadow = true;
+      const winMat = toon("#ffe66d");
+      const mkWin = (lx, ly, lz) => {
+        const wMesh = new THREE.Mesh(new THREE.BoxGeometry(1.2, 1.4, 0.2), winMat);
+        wMesh.position.set(lx, ly, lz);
+        g.add(wMesh);
+      };
+      const wy = 0.575 + h * 0.45;
+      mkWin(0, wy, d * 0.5 + 0.05);
+      mkWin(0, wy, -d * 0.5 - 0.05);
+      mkWin(w * 0.5 + 0.05, wy, 0);
+      mkWin(-w * 0.5 - 0.05, wy, 0);
+      g.add(body, roof);
+      if (s.rotY) g.rotation.y = s.rotY;
+    }
+    g.position.set(s.x || 0, 0, s.z || 0);
+    return g;
   }
 
   buildPadFromPieces(pieces, radius) {
@@ -713,10 +791,10 @@ export class GameWorld {
   }
 
   /** Rebuild when layout changes; hill uses shards; otherwise solid pieces/pad. */
-  buildArenaMaybe(radius, mode, shards, pieces, layoutKey) {
+  buildArenaMaybe(radius, mode, shards, pieces, layoutKey, structures = null) {
     if (mode === "hill" && shards?.length) {
       if (!this.hillMode || !this.shardMeshes.size || (layoutKey && layoutKey !== this.layoutKey)) {
-        this.buildArena(radius || shards[0].radius || 13, "hill", shards, null, layoutKey);
+        this.buildArena(radius || shards[0].radius || 13, "hill", shards, null, layoutKey, null);
       } else {
         this.syncShards(shards);
       }
@@ -730,6 +808,7 @@ export class GameWorld {
         null,
         pieces,
         layoutKey,
+        structures,
       );
       return;
     }
@@ -741,13 +820,14 @@ export class GameWorld {
         null,
         pieces,
         layoutKey,
+        structures,
       );
       return;
     }
     if (!radius) return;
     if (Math.abs(radius - this.platformRadius) < 0.015) return;
     if (radius > this.platformRadius + 0.4 || !this.baseRadius) {
-      this.buildArena(radius, mode || "sumo", null, pieces, layoutKey);
+      this.buildArena(radius, mode || "sumo", null, pieces, layoutKey, structures);
       return;
     }
     this.setVisualRadius(radius);

@@ -292,6 +292,7 @@ export class GameRoom {
     this.debrisNextId = 1;
     this.debrisSpawnT = 2 + Math.random() * 2;
     this.maxDebris = 18;
+    this.structures = [];
     this.goats = [];
     this.maxGoats = 2;
     this.goatSpawnT = 6 + Math.random() * 8;
@@ -331,6 +332,7 @@ export class GameRoom {
     for (const m of this.medkits || []) this.world.removeBody(m);
     this.medkits = [];
     this.medkitSpawnT = 6 + Math.random() * 5;
+    this.clearStructures();
     this.clearShards();
     this.layout = layout;
     // Include sizes/rotation so procedural regenerations always force a client rebuild
@@ -356,6 +358,14 @@ export class GameRoom {
       this.rebuildGroundPhysics(layout.pieces);
     }
 
+    if (layout.id === "battlefield" || this.mode === "guns") {
+      this.spawnBattlefieldDecor();
+      this.maxDebris = 28;
+    } else {
+      this.maxDebris = 18;
+      this.layout.structures = [];
+    }
+
     const spots = [
       [5.2, 2.4, "#5ce1ff"],
       [-4.6, -3.2, "#d6ff4a"],
@@ -366,18 +376,17 @@ export class GameRoom {
     // On huge guns maps, scatter a few more props across the pad
     if (this.platformRadius > 40) {
       const R = this.platformRadius * 0.55;
-      const extra = [
-        ["#5ce1ff", "#d6ff4a", "#c77dff", "#ff9e00", "#80ffdb", "#ff7ad9"],
-      ][0];
-      for (let i = 0; i < 12; i++) {
-        const a = (i / 12) * Math.PI * 2 + 0.4;
-        const r = R * (0.25 + (i % 3) * 0.22);
+      const extra = ["#5ce1ff", "#d6ff4a", "#c77dff", "#ff9e00", "#80ffdb", "#ff7ad9"];
+      for (let i = 0; i < 18; i++) {
+        const a = (i / 18) * Math.PI * 2 + 0.4;
+        const r = R * (0.2 + (i % 4) * 0.18);
         spots.push([Math.cos(a) * r, Math.sin(a) * r, extra[i % extra.length]]);
       }
     }
     for (const [x, z, color] of spots) {
       if (!this.overAttachedPlatform(x, z, -0.4)) continue;
       if (useHillShards && !this.overAttachedPlatform(x, z)) continue;
+      if (this.tooCloseToStructure(x, z, 4)) continue;
       const body = new CANNON.Body({
         mass: 7.5,
         material: this.boxMat,
@@ -386,10 +395,97 @@ export class GameRoom {
         linearDamping: 0.42,
         angularDamping: 0.55,
       });
-      body.userData = { id: this.boxNextId++, color, spawnX: x, spawnZ: z };
+      body.userData = { id: this.boxNextId++, color, spawnX: x, spawnZ: z, kind: "crate" };
       this.world.addBody(body);
       this.boxes.push(body);
-      if (this.boxes.length >= (this.platformRadius > 40 ? 12 : 3)) break;
+      if (this.boxes.length >= (this.platformRadius > 40 ? 16 : 3)) break;
+    }
+  }
+
+  clearStructures() {
+    for (const b of this.structures || []) this.world.removeBody(b);
+    this.structures = [];
+  }
+
+  tooCloseToStructure(x, z, minDist, list = null) {
+    const arr = list || this.layout?.structures || [];
+    for (const s of arr) {
+      const pad = s.kind === "building" ? Math.max(s.w || 0, s.d || 0) * 0.55 : (s.r || 2) + 1;
+      if (Math.hypot(x - s.x, z - s.z) < minDist + pad) return true;
+    }
+    return false;
+  }
+
+  /** Static buildings + trees for the big guns map (cover, no fall). */
+  spawnBattlefieldDecor() {
+    this.clearStructures();
+    const items = [];
+    const buildingColors = ["#ff8ec4", "#c77dff", "#5ce1ff", "#ffd36a", "#80ffdb", "#ff9e00"];
+    let n = 0;
+    for (let ix = -4; ix <= 4; ix++) {
+      for (let iz = -4; iz <= 4; iz++) {
+        if (Math.abs(ix) + Math.abs(iz) < 2) continue;
+        const x = ix * 32 + ((ix * 17 + iz * 13) % 7) - 3;
+        const z = iz * 32 + ((ix * 11 + iz * 19) % 7) - 3;
+        if (Math.hypot(x, z) < 28) continue;
+        if (Math.abs(x) > 138 || Math.abs(z) > 138) continue;
+        const w = 7 + ((n * 3) % 9);
+        const d = 7 + ((n * 5) % 8);
+        const h = 6 + ((n * 7) % 14);
+        items.push({
+          id: n++,
+          kind: "building",
+          x,
+          z,
+          w,
+          d,
+          h,
+          rotY: ((n % 4) * Math.PI) / 2,
+          color: buildingColors[n % buildingColors.length],
+        });
+      }
+    }
+    for (let i = 0; i < 48; i++) {
+      const a = (i / 48) * Math.PI * 2 + i * 0.17;
+      const rr = 22 + (i % 7) * 16 + (i % 3) * 4;
+      const x = Math.cos(a) * rr;
+      const z = Math.sin(a) * rr;
+      if (Math.abs(x) > 140 || Math.abs(z) > 140) continue;
+      if (this.tooCloseToStructure(x, z, 6, items)) continue;
+      items.push({
+        id: n++,
+        kind: "tree",
+        x,
+        z,
+        r: 2.2 + (i % 4) * 0.55,
+        h: 5.5 + (i % 5) * 1.1,
+        color: i % 2 === 0 ? "#3ecf6a" : "#2aad52",
+      });
+    }
+    this.layout.structures = items;
+    this.layoutKey += `|struct:${items.length}:${items.map((s) => `${s.kind},${s.x.toFixed(1)},${s.z.toFixed(1)}`).join(";")}`;
+
+    for (const s of items) {
+      const body = new CANNON.Body({
+        mass: 0,
+        type: CANNON.Body.STATIC,
+        material: this.boxMat,
+      });
+      if (s.kind === "building") {
+        const hy = s.h * 0.5;
+        body.addShape(new CANNON.Box(new CANNON.Vec3(s.w * 0.5, hy, s.d * 0.5)));
+        body.position.set(s.x, PLATFORM_TOP + hy, s.z);
+        if (s.rotY) body.quaternion.setFromEuler(0, s.rotY, 0);
+      } else {
+        const trunkH = s.h * 0.55;
+        const canopyR = s.r;
+        body.addShape(new CANNON.Cylinder(0.35, 0.45, trunkH, 8), new CANNON.Vec3(0, trunkH * 0.5, 0));
+        body.addShape(new CANNON.Sphere(canopyR), new CANNON.Vec3(0, trunkH + canopyR * 0.65, 0));
+        body.position.set(s.x, PLATFORM_TOP, s.z);
+      }
+      body.userData = { kind: s.kind, id: s.id, static: true };
+      this.world.addBody(body);
+      this.structures.push(body);
     }
   }
 
@@ -457,6 +553,7 @@ export class GameRoom {
     const kind = kinds[(Math.random() * kinds.length) | 0];
     const palette = [...COLORS, "#5ce1ff", "#ff7ad9", "#fff1a8", "#ff9e00"];
     const color = palette[(Math.random() * palette.length) | 0];
+    const huge = this.mode === "guns" || this.platformRadius > 40;
 
     let x;
     let z;
@@ -478,32 +575,34 @@ export class GameRoom {
       x = Math.cos(ang) * r;
       z = Math.sin(ang) * r;
     }
-    const y = 13 + Math.random() * 7;
+    if (this.tooCloseToStructure(x, z, 3)) return;
+    const y = (huge ? 18 : 13) + Math.random() * (huge ? 12 : 7);
 
     let shape;
     let sx;
     let sy;
     let sz;
     let mass;
+    const scale = huge ? 2.4 + Math.random() * 2.2 : 1;
     if (kind === "sphere") {
-      const rad = 0.52 + Math.random() * 0.85;
+      const rad = (0.52 + Math.random() * 0.85) * scale;
       shape = new CANNON.Sphere(rad);
       sx = rad;
       sy = rad;
       sz = rad;
       mass = 2.2 + rad * 5;
     } else if (kind === "cylinder") {
-      const rad = 0.42 + Math.random() * 0.65;
-      const h = 0.85 + Math.random() * 1.5;
+      const rad = (0.42 + Math.random() * 0.65) * scale;
+      const h = (0.85 + Math.random() * 1.5) * scale;
       shape = cylinder(rad, rad, h, 12);
       sx = rad;
       sy = h;
       sz = rad;
       mass = 2.8 + rad * h * 5;
     } else {
-      const hx = 0.45 + Math.random() * 0.85;
-      const hy = 0.45 + Math.random() * 0.85;
-      const hz = 0.45 + Math.random() * 0.85;
+      const hx = (0.45 + Math.random() * 0.85) * scale;
+      const hy = (0.45 + Math.random() * 0.85) * scale;
+      const hz = (0.45 + Math.random() * 0.85) * scale;
       shape = new CANNON.Box(new CANNON.Vec3(hx, hy, hz));
       sx = hx * 2;
       sy = hy * 2;
@@ -1298,28 +1397,42 @@ export class GameRoom {
     const ox = origin.x;
     const oy = origin.y + 0.35;
     const oz = origin.z;
+    const fx = fwd.x;
+    const fz = fwd.z;
     const range = Math.max(90, Math.min(240, this.platformRadius * 1.15));
-    let hit = null;
     let hitT = range;
+    let hitPlayer = null;
+
     for (const o of this.players.values()) {
       if (o === p || !o.alive) continue;
-      // ray-sphere: closest point on ray to sphere center
       const dx = o.body.position.x - ox;
       const dy = o.body.position.y - oy;
       const dz = o.body.position.z - oz;
-      const t = dx * fwd.x + dy * 0 + dz * fwd.z;
+      const t = dx * fx + dy * 0 + dz * fz;
       if (t < 0.4 || t > hitT) continue;
-      const px = ox + fwd.x * t;
-      const pz = oz + fwd.z * t;
+      const px = ox + fx * t;
+      const pz = oz + fz * t;
       const dist = Math.hypot(px - o.body.position.x, (oy - o.body.position.y) * 0.35, pz - o.body.position.z);
       if (dist < 1.15) {
-        hit = o;
+        hitPlayer = o;
         hitT = t;
       }
     }
-    const ex = ox + fwd.x * hitT;
+
+    let hitProp = null;
+    const props = [...this.boxes, ...this.debris, ...this.goats, ...this.structures];
+    for (const body of props) {
+      if (body.userData?.kind === "medkit") continue;
+      const t = this.raycastBody(ox, oy, oz, fx, 0, fz, body, hitT);
+      if (t == null || t >= hitT) continue;
+      hitT = t;
+      hitProp = body;
+      hitPlayer = null;
+    }
+
+    const ex = ox + fx * hitT;
     const ey = oy;
-    const ez = oz + fwd.z * hitT;
+    const ez = oz + fz * hitT;
     this.events.push({
       type: "shot",
       id: p.id,
@@ -1330,17 +1443,115 @@ export class GameRoom {
       x1: ex,
       y1: ey,
       z1: ez,
-      hit: !!hit,
+      hit: !!(hitPlayer || hitProp),
     });
-    if (!hit) return;
-    hit.hp = Math.max(0, (hit.hp ?? 100) - 20);
-    hit.lastHitBy = p.id;
-    hit.lastHitAt = this.roundT;
-    hit.body.velocity.x += fwd.x * 4.5;
-    hit.body.velocity.z += fwd.z * 4.5;
-    hit.body.velocity.y += 1.5;
-    this.events.push({ type: "hit", by: p.name, victim: hit.name, id: hit.id, hp: hit.hp });
-    if (hit.hp <= 0) this.kill(hit, "shot");
+
+    if (hitProp && hitProp.mass > 0 && hitProp.type !== CANNON.Body.STATIC) {
+      hitProp.wakeUp();
+      const kick = 14 + Math.min(22, 80 / Math.max(4, hitProp.mass));
+      hitProp.velocity.x += fx * kick;
+      hitProp.velocity.z += fz * kick;
+      hitProp.velocity.y += 5.5;
+      hitProp.angularVelocity.x += (Math.random() - 0.5) * 8;
+      hitProp.angularVelocity.y += (Math.random() - 0.5) * 10;
+      hitProp.angularVelocity.z += (Math.random() - 0.5) * 8;
+    }
+
+    if (!hitPlayer) return;
+    hitPlayer.hp = Math.max(0, (hitPlayer.hp ?? 100) - 20);
+    hitPlayer.lastHitBy = p.id;
+    hitPlayer.lastHitAt = this.roundT;
+    hitPlayer.body.velocity.x += fx * 4.5;
+    hitPlayer.body.velocity.z += fz * 4.5;
+    hitPlayer.body.velocity.y += 1.5;
+    this.events.push({
+      type: "hit",
+      by: p.name,
+      victim: hitPlayer.name,
+      id: hitPlayer.id,
+      hp: hitPlayer.hp,
+    });
+    if (hitPlayer.hp <= 0) this.kill(hitPlayer, "shot");
+  }
+
+  /** Ray vs cannon body shapes (box / sphere / cylinder). Returns distance t or null. */
+  raycastBody(ox, oy, oz, dx, dy, dz, body, maxT) {
+    let best = null;
+    for (let i = 0; i < body.shapes.length; i++) {
+      const shape = body.shapes[i];
+      const offset = body.shapeOffsets[i] || new CANNON.Vec3(0, 0, 0);
+      const sq = body.shapeOrientations[i] || new CANNON.Quaternion(0, 0, 0, 1);
+      const worldOff = body.quaternion.vmult(offset);
+      const cx = body.position.x + worldOff.x;
+      const cy = body.position.y + worldOff.y;
+      const cz = body.position.z + worldOff.z;
+      const q = sq.clone();
+      body.quaternion.mult(q, q);
+      const invQ = q.clone().conjugate();
+      const locO = invQ.vmult(new CANNON.Vec3(ox - cx, oy - cy, oz - cz));
+      const locD = invQ.vmult(new CANNON.Vec3(dx, dy, dz));
+
+      let t = null;
+      if (shape instanceof CANNON.Sphere) {
+        t = this.raySphereLocal(locO, locD, shape.radius, maxT);
+      } else if (shape instanceof CANNON.Box) {
+        t = this.rayAABBLocal(locO, locD, shape.halfExtents, maxT);
+      } else if (shape instanceof CANNON.Cylinder) {
+        const he = new CANNON.Vec3(
+          Math.max(shape.radiusTop, shape.radiusBottom),
+          shape.height * 0.5,
+          Math.max(shape.radiusTop, shape.radiusBottom),
+        );
+        t = this.rayAABBLocal(locO, locD, he, maxT);
+      }
+      if (t != null && t < maxT && (best == null || t < best)) best = t;
+    }
+    return best;
+  }
+
+  raySphereLocal(o, d, r, maxT) {
+    const a = d.x * d.x + d.y * d.y + d.z * d.z;
+    if (a < 1e-10) return null;
+    const b = 2 * (o.x * d.x + o.y * d.y + o.z * d.z);
+    const c = o.x * o.x + o.y * o.y + o.z * o.z - r * r;
+    const disc = b * b - 4 * a * c;
+    if (disc < 0) return null;
+    const s = Math.sqrt(disc);
+    const t0 = (-b - s) / (2 * a);
+    const t1 = (-b + s) / (2 * a);
+    if (t0 >= 0.2 && t0 <= maxT) return t0;
+    if (t1 >= 0.2 && t1 <= maxT) return t1;
+    return null;
+  }
+
+  rayAABBLocal(o, d, he, maxT) {
+    let tmin = 0;
+    let tmax = maxT;
+    const axes = [
+      [o.x, d.x, he.x],
+      [o.y, d.y, he.y],
+      [o.z, d.z, he.z],
+    ];
+    for (const [oo, dd, hh] of axes) {
+      if (Math.abs(dd) < 1e-9) {
+        if (oo < -hh || oo > hh) return null;
+        continue;
+      }
+      const inv = 1 / dd;
+      let t1 = (-hh - oo) * inv;
+      let t2 = (hh - oo) * inv;
+      if (t1 > t2) {
+        const tmp = t1;
+        t1 = t2;
+        t2 = tmp;
+      }
+      tmin = Math.max(tmin, t1);
+      tmax = Math.min(tmax, t2);
+      if (tmin > tmax) return null;
+    }
+    if (tmax < 0.2) return null;
+    const t = tmin >= 0.2 ? tmin : tmax;
+    return t <= maxT ? t : null;
   }
 
   doPunch(p, fwd) {
@@ -1532,6 +1743,7 @@ export class GameRoom {
       layoutId: this.layout?.id || "circle",
       layoutKey: this.layoutKey,
       pieces: this.layout?.pieces || [],
+      structures: this.layout?.structures || [],
       radius: this.platformRadius,
       phase: this.phase,
       players: [...this.players.values()].map((p) => ({
@@ -1550,6 +1762,7 @@ export class GameRoom {
       layoutId: this.layout?.id || "circle",
       layoutKey: this.layoutKey,
       pieces: this.layout?.pieces || [],
+      structures: this.layout?.structures || [],
       radius: this.platformRadius,
       bombId: this.bombId,
       bombT: this.bombT,
@@ -1693,6 +1906,7 @@ export class GameRoom {
       layoutId: this.layout?.id || "circle",
       layoutKey: this.layoutKey,
       pieces: this.layout?.pieces || [],
+      structures: this.layout?.structures || [],
       radius: this.platformRadius,
       bombId: this.bombId,
       bombT: this.bombT,

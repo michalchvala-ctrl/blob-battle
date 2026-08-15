@@ -79,6 +79,7 @@ function syncArenaVisual(data) {
     data.shards || null,
     data.pieces || null,
     data.layoutKey || "",
+    data.structures || null,
   );
 }
 
@@ -216,7 +217,7 @@ socket.on("over", (o) => {
 });
 
 socket.on("st", (st) => {
-  world.buildArenaMaybe(st.radius, st.mode, st.shards, st.pieces, st.layoutKey);
+  world.buildArenaMaybe(st.radius, st.mode, st.shards, st.pieces, st.layoutKey, st.structures);
   world.syncPlayers(st.players);
   world.syncBoxes(st.boxes);
   world.syncDebris(st.debris);
@@ -305,7 +306,7 @@ function applyLobby(data) {
     show($("win"), false);
     playing = false;
     if (data.pieces) {
-      world.buildArenaMaybe(data.radius, data.mode, null, data.pieces, data.layoutKey);
+      world.buildArenaMaybe(data.radius, data.mode, null, data.pieces, data.layoutKey, data.structures);
     }
   }
   $("mode-pill").textContent = MODE_LABEL[data.mode] || data.mode;
