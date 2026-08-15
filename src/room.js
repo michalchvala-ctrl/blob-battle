@@ -23,7 +23,7 @@ export const MODE_INFO = {
   sumo: { name: "Zhodiť", blurb: "Posledný na ostrove vyhral. Ostrov ostáva veľký." },
   bomb: { name: "Bomba", blurb: "Dotyk odovzdá bombu. Kto ju drží, vybuchne." },
   hill: { name: "Kráľ kopca", blurb: "Kraje praskajú a úlomky padajú do prázdna. Vydrž." },
-  guns: { name: "Streľba", blurb: "Zbrane, životy, lekárničky. Veľká mapa. Strela = 20 %." },
+  guns: { name: "Streľba", blurb: "Zbrane, autá (E), životy. Veľká mapa. Strela = 20 %." },
 };
 
 const CODE_CHARS = "ABCDEFGHJKLMNPQRSTUVWXYZ23456789";
@@ -296,6 +296,7 @@ export class GameRoom {
     this.debrisSpawnT = 2 + Math.random() * 2;
     this.maxDebris = 18;
     this.structures = [];
+    this.vehicles = [];
     this.goats = [];
     this.maxGoats = 2;
     this.goatSpawnT = 6 + Math.random() * 8;
@@ -355,6 +356,12 @@ export class GameRoom {
     for (const s of this.snipers || []) this.world.removeBody(s);
     this.snipers = [];
     this.sniperSpawnT = 8 + Math.random() * 6;
+    for (const v of this.vehicles || []) this.world.removeBody(v);
+    this.vehicles = [];
+    for (const p of this.players.values()) {
+      p.vehicleId = null;
+      if (p.body) p.body.collisionResponse = true;
+    }
     this.ladders = [];
     this.clearStructures();
     this.clearShards();
@@ -578,19 +585,18 @@ export class GameRoom {
       }
     }
 
-    // Parked Quaternius cars (CC0) with solid collision
+    // Parked Quaternius cars — driveable (E to enter)
     const carModels = ["BasicCar", "Taxi", "CopCar", "SimpleCarShort", "RaceCar"];
+    const carSpawns = [];
     for (let i = 0; i < 28; i++) {
-      const along = (i % 2 === 0);
+      const along = i % 2 === 0;
       const lane = ((i / 2) | 0) - 7;
       const x = along ? lane * 18 + ((i * 3) % 7) - 3 : 22 + (i % 5) * 2;
       const z = along ? 18 + (i % 6) * 2 : lane * 18 + ((i * 5) % 7) - 3;
       if (Math.abs(x) > 130 || Math.abs(z) > 130) continue;
       if (Math.hypot(x, z) < 26) continue;
       if (this.tooCloseToStructure(x, z, 6, items)) continue;
-      items.push({
-        id: n++,
-        kind: "car",
+      carSpawns.push({
         model: carModels[i % carModels.length],
         x,
         z,
@@ -614,26 +620,11 @@ export class GameRoom {
     }
 
     this.layout.structures = items;
-    this.layoutKey += `|city:${items.length}:b${items.filter((s) => s.kind === "building").length}:c${items.filter((s) => s.kind === "car").length}:r${items.filter((s) => s.kind === "road").length}`;
+    this.layoutKey += `|city:${items.length}:b${items.filter((s) => s.kind === "building").length}:v${carSpawns.length}:r${items.filter((s) => s.kind === "road").length}`;
 
     for (const s of items) {
       if (s.kind === "building") {
         this.buildSolidBuilding(s);
-      } else if (s.kind === "car") {
-        const body = new CANNON.Body({
-          mass: 0,
-          type: CANNON.Body.STATIC,
-          material: this.boxMat,
-        });
-        const hw = (s.w || 4.2) * 0.5;
-        const hh = (s.h || 1.6) * 0.5;
-        const hd = (s.d || 2.1) * 0.5;
-        body.addShape(new CANNON.Box(new CANNON.Vec3(hw, hh, hd)));
-        body.position.set(s.x, PLATFORM_TOP + hh, s.z);
-        if (s.rotY) body.quaternion.setFromEuler(0, s.rotY, 0);
-        body.userData = { kind: "car", id: s.id, static: true, solid: true };
-        this.world.addBody(body);
-        this.structures.push(body);
       } else if (s.kind === "hill") {
         const body = new CANNON.Body({
           mass: 0,
@@ -664,6 +655,43 @@ export class GameRoom {
         this.world.addBody(body);
         this.structures.push(body);
       }
+    }
+
+    this.spawnDriveableCars(carSpawns);
+  }
+
+  spawnDriveableCars(spawns) {
+    for (const v of this.vehicles || []) this.world.removeBody(v);
+    this.vehicles = [];
+    for (const s of spawns || []) {
+      const hw = (s.w || 4.2) * 0.5;
+      const hh = (s.h || 1.6) * 0.5;
+      const hd = (s.d || 2.1) * 0.5;
+      const body = new CANNON.Body({
+        mass: 120,
+        material: this.boxMat,
+        shape: new CANNON.Box(new CANNON.Vec3(hw, hh, hd)),
+        position: new CANNON.Vec3(s.x, PLATFORM_TOP + hh + 0.02, s.z),
+        linearDamping: 0.35,
+        angularDamping: 0.95,
+        fixedRotation: true,
+      });
+      const yaw = s.rotY || 0;
+      body.quaternion.setFromEuler(0, yaw, 0);
+      body.userData = {
+        id: this.debrisNextId++,
+        kind: "vehicle",
+        model: s.model || "BasicCar",
+        color: s.color || "#c44",
+        sx: s.w || 4.4,
+        sy: s.h || 1.7,
+        sz: s.d || 2.2,
+        yaw,
+        speed: 0,
+        driverId: null,
+      };
+      this.world.addBody(body);
+      this.vehicles.push(body);
     }
   }
 
@@ -794,7 +822,7 @@ export class GameRoom {
   applyLadderClimb(dt) {
     if (!this.ladders?.length) return;
     for (const p of this.players.values()) {
-      if (!p.alive) continue;
+      if (!p.alive || p.vehicleId) continue;
       const pos = p.body.position;
       let on = null;
       for (const L of this.ladders) {
@@ -1326,6 +1354,17 @@ export class GameRoom {
         this.goats.splice(i, 1);
       }
     }
+    for (let i = (this.vehicles || []).length - 1; i >= 0; i--) {
+      const v = this.vehicles[i];
+      if (v.position.y < -12) {
+        if (v.userData.driverId) {
+          const p = this.players.get(v.userData.driverId);
+          if (p) this.exitVehicle(p, false);
+        }
+        this.world.removeBody(v);
+        this.vehicles.splice(i, 1);
+      }
+    }
     for (let i = this.shards.length - 1; i >= 0; i--) {
       const s = this.shards[i];
       if (!s.attached && s.body.position.y < -14) {
@@ -1446,8 +1485,9 @@ export class GameRoom {
       color: this.colorForIndex(index),
       body,
       alive: true,
-      input: { mx: 0, mz: 0, yaw: 0, pitch: 0, jump: false, punch: false, dash: false, sprint: false, shoot: false, grenade: false, grenadeCharge: 0 },
+      input: { mx: 0, mz: 0, yaw: 0, pitch: 0, jump: false, punch: false, dash: false, sprint: false, shoot: false, grenade: false, grenadeCharge: 0, use: false },
       jumpHeld: false,
+      useHeld: false,
       punchCd: 0,
       shootCd: 0,
       dashCd: 0,
@@ -1461,6 +1501,7 @@ export class GameRoom {
       lastHitBy: null,
       lastHitAt: 0,
       yaw: 0,
+      vehicleId: null,
     };
     this.players.set(socket.id, player);
     this.scores.set(socket.id, this.scores.get(socket.id) || 0);
@@ -1479,6 +1520,7 @@ export class GameRoom {
   removePlayer(id) {
     const p = this.players.get(id);
     if (!p) return;
+    this.exitVehicle(p, false);
     this.world.removeBody(p.body);
     this.players.delete(id);
     if (this.bombId === id) this.bombId = this.randomAliveId(id);
@@ -1504,6 +1546,7 @@ export class GameRoom {
     if (data.dash) p.input.dash = true;
     p.input.sprint = !!data.sprint;
     if (data.shoot) p.input.shoot = true;
+    if (data.use) p.input.use = true;
     if (data.grenade) {
       p.input.grenade = true;
       p.input.grenadeCharge = clamp(Number(data.grenadeCharge) || 0.35, 0.12, 1);
@@ -1631,6 +1674,7 @@ export class GameRoom {
   }
 
   respawn(p, playingDrop, index, count) {
+    this.exitVehicle(p, false);
     const i = index ?? [...this.players.keys()].indexOf(p.id);
     const n = count ?? this.players.size;
     const pos = this.spawnPos(Math.max(i, 0), n);
@@ -1638,6 +1682,7 @@ export class GameRoom {
     p.body.velocity.set(0, 0, 0);
     p.body.angularVelocity.set(0, 0, 0);
     p.body.quaternion.set(0, 0, 0, 1);
+    p.body.collisionResponse = true;
     p.body.wakeUp();
     if (playingDrop) p.alive = true;
   }
@@ -1788,6 +1833,7 @@ export class GameRoom {
       p.shootCd = Math.max(0, p.shootCd - dt);
       p.dashCd = Math.max(0, p.dashCd - dt);
       p.grenadeCd = Math.max(0, (p.grenadeCd || 0) - dt);
+      p.carHitCd = Math.max(0, (p.carHitCd || 0) - dt);
       p.punchFlash = Math.max(0, p.punchFlash - dt);
       p.shootFlash = Math.max(0, (p.shootFlash || 0) - dt);
       if (!p.alive && this.phase === "playing") {
@@ -1798,19 +1844,23 @@ export class GameRoom {
     }
 
     this.steerGoats(dt);
+    this.coastEmptyVehicles(dt);
     this.stepBullets(dt);
     this.stepGrenades(dt);
     this.stepSmokes(dt);
     this.world.step(1 / 60, dt, 4);
     // Re-apply goat chase after physics so friction cannot turn it into a snail
     this.steerGoats(0);
+    this.attachDriversToVehicles();
     this.applyPropHitKnockback();
+    this.applyVehicleHits();
     this.tickSniperDrop(dt);
     this.pickupSnipers();
     this.applyLadderClimb(dt);
 
     for (const p of this.players.values()) {
       if (!p.alive && this.phase === "playing") continue;
+      if (p.vehicleId) continue;
       this.stabilizeOnPlatform(p);
     }
 
@@ -1858,6 +1908,19 @@ export class GameRoom {
   }
 
   control(p, dt) {
+    // Enter / exit vehicle (E)
+    if (p.input.use && !p.useHeld && p.alive) {
+      if (p.vehicleId) this.exitVehicle(p, true);
+      else this.tryEnterVehicle(p);
+    }
+    p.useHeld = !!p.input.use;
+    p.input.use = false;
+
+    if (p.vehicleId) {
+      this.controlVehicle(p, dt);
+      return;
+    }
+
     const body = p.body;
     const grounded = this.isGrounded(body);
 
@@ -1926,6 +1989,148 @@ export class GameRoom {
       p.input.punch = false;
       p.input.shoot = false;
       p.input.grenade = false;
+    }
+  }
+
+  findVehicle(id) {
+    return (this.vehicles || []).find((v) => v.userData?.id === id) || null;
+  }
+
+  tryEnterVehicle(p) {
+    if (this.mode !== "guns") return;
+    let best = null;
+    let bestD = 4.2;
+    for (const v of this.vehicles || []) {
+      if (v.userData.driverId) continue;
+      const d = Math.hypot(v.position.x - p.body.position.x, v.position.z - p.body.position.z);
+      if (d < bestD) {
+        bestD = d;
+        best = v;
+      }
+    }
+    if (!best) return;
+    best.userData.driverId = p.id;
+    p.vehicleId = best.userData.id;
+    p.body.collisionResponse = false;
+    p.body.velocity.set(0, 0, 0);
+    this.events.push({ type: "enterCar", id: p.id });
+  }
+
+  exitVehicle(p, placeBeside = true) {
+    if (!p?.vehicleId) return;
+    const v = this.findVehicle(p.vehicleId);
+    if (v && v.userData.driverId === p.id) {
+      v.userData.driverId = null;
+      v.userData.speed = (v.userData.speed || 0) * 0.35;
+      if (placeBeside && p.body) {
+        const yaw = v.userData.yaw || 0;
+        const side = 2.6;
+        p.body.position.set(
+          v.position.x + Math.cos(yaw) * side,
+          Math.max(PLAYER_REST_Y, v.position.y + 0.4),
+          v.position.z + Math.sin(yaw) * side,
+        );
+        p.body.velocity.set(0, 2, 0);
+      }
+    }
+    p.vehicleId = null;
+    if (p.body) p.body.collisionResponse = true;
+  }
+
+  controlVehicle(p, dt) {
+    const v = this.findVehicle(p.vehicleId);
+    if (!v) {
+      p.vehicleId = null;
+      p.body.collisionResponse = true;
+      return;
+    }
+    p.input.jump = false;
+    p.input.shoot = false;
+    p.input.punch = false;
+    p.input.grenade = false;
+    p.input.dash = false;
+
+    let speed = v.userData.speed || 0;
+    const throttle = p.input.mz || 0;
+    const steer = -(p.input.mx || 0);
+    const maxSpd = p.input.sprint ? 36 : 26;
+    if (throttle > 0.08) speed = this.approach(speed, maxSpd * throttle, 32 * dt);
+    else if (throttle < -0.08) speed = this.approach(speed, -maxSpd * 0.42 * Math.abs(throttle), 38 * dt);
+    else speed = this.approach(speed, 0, 24 * dt);
+
+    if (Math.abs(speed) > 0.6) {
+      const turn = steer * dt * (2.4 * Math.min(1.15, Math.abs(speed) / 10)) * Math.sign(speed);
+      v.userData.yaw = (v.userData.yaw || 0) + turn;
+    }
+    const yaw = v.userData.yaw || 0;
+    const fx = -Math.sin(yaw);
+    const fz = -Math.cos(yaw);
+    v.velocity.x = fx * speed;
+    v.velocity.z = fz * speed;
+    if (v.position.y < PLATFORM_TOP + (v.userData.sy || 1.7) * 0.5 + 0.05) {
+      v.velocity.y = Math.max(v.velocity.y, 0);
+    }
+    v.quaternion.setFromEuler(0, yaw, 0);
+    v.userData.speed = speed;
+    v.wakeUp();
+
+    // Seat lock (pre-physics; re-applied after step)
+    p.body.position.set(v.position.x, v.position.y + 0.35, v.position.z);
+    p.body.velocity.set(v.velocity.x, v.velocity.y, v.velocity.z);
+    p.yaw = yaw;
+  }
+
+  attachDriversToVehicles() {
+    for (const p of this.players.values()) {
+      if (!p.alive || !p.vehicleId) continue;
+      const v = this.findVehicle(p.vehicleId);
+      if (!v) {
+        p.vehicleId = null;
+        p.body.collisionResponse = true;
+        continue;
+      }
+      p.body.position.set(v.position.x, v.position.y + 0.35, v.position.z);
+      p.body.velocity.set(v.velocity.x, v.velocity.y, v.velocity.z);
+    }
+  }
+
+  coastEmptyVehicles(dt) {
+    for (const v of this.vehicles || []) {
+      if (v.userData.driverId) continue;
+      let speed = v.userData.speed || 0;
+      speed = this.approach(speed, 0, 16 * dt);
+      v.userData.speed = speed;
+      const yaw = v.userData.yaw || 0;
+      v.velocity.x = -Math.sin(yaw) * speed;
+      v.velocity.z = -Math.cos(yaw) * speed;
+      v.quaternion.setFromEuler(0, yaw, 0);
+    }
+  }
+
+  /** Fast cars damage pedestrians on contact. */
+  applyVehicleHits() {
+    if (this.mode !== "guns" || this.phase !== "playing") return;
+    for (const v of this.vehicles || []) {
+      const spd = Math.abs(v.userData.speed || 0);
+      if (spd < 10) continue;
+      const driverId = v.userData.driverId;
+      for (const p of this.players.values()) {
+        if (!p.alive || p.vehicleId || p.id === driverId) continue;
+        if ((p.carHitCd || 0) > 0) continue;
+        const d = Math.hypot(v.position.x - p.body.position.x, v.position.z - p.body.position.z);
+        if (d > 3.2) continue;
+        const dmg = Math.min(45, 12 + (spd - 10) * 1.4);
+        p.hp = (p.hp ?? 100) - dmg;
+        p.lastHitBy = driverId || null;
+        p.lastHitAt = this.roundT;
+        p.carHitCd = 0.85;
+        const yaw = v.userData.yaw || 0;
+        p.body.velocity.x += -Math.sin(yaw) * spd * 0.55;
+        p.body.velocity.z += -Math.cos(yaw) * spd * 0.55;
+        p.body.velocity.y += 6;
+        this.events.push({ type: "hit", id: p.id, by: driverId });
+        if (p.hp <= 0) this.kill(p, "shot");
+      }
     }
   }
 
@@ -2439,6 +2644,7 @@ export class GameRoom {
   kill(p, reason) {
     if (this.phase !== "playing") return;
     if (!p.alive) return;
+    this.exitVehicle(p, true);
     p.alive = false;
     const killer = p.lastHitBy && this.roundT - p.lastHitAt < 3.2 ? this.players.get(p.lastHitBy) : null;
     this.events.push({
@@ -2651,6 +2857,7 @@ export class GameRoom {
         ammo: p.ammo ?? 0,
         weapon: p.weapon || "knife",
         hasSniper: !!p.hasSniper,
+        vehicleId: p.vehicleId || null,
       });
     }
     const boxes = this.boxes.map((b, i) => ({
@@ -2779,8 +2986,30 @@ export class GameRoom {
       vy: b.velocity.y,
       vz: b.velocity.z,
     }));
-    // Client still reads one debris list — merge goats + medkits + grenades + snipers + ammo
-    const debrisOut = [...debris, ...goats, ...medkits, ...grenades, ...snipers, ...ammoPacks];
+    // Client still reads one debris list — merge goats + medkits + grenades + snipers + ammo + vehicles
+    const vehicles = (this.vehicles || []).map((b) => ({
+      id: b.userData?.id ?? 0,
+      kind: "vehicle",
+      model: b.userData?.model || "BasicCar",
+      color: b.userData?.color || "#c44",
+      sx: b.userData?.sx ?? 4.4,
+      sy: b.userData?.sy ?? 1.7,
+      sz: b.userData?.sz ?? 2.2,
+      x: b.position.x,
+      y: b.position.y,
+      z: b.position.z,
+      qx: b.quaternion.x,
+      qy: b.quaternion.y,
+      qz: b.quaternion.z,
+      qw: b.quaternion.w,
+      yaw: b.userData?.yaw ?? 0,
+      vx: b.velocity.x,
+      vy: b.velocity.y,
+      vz: b.velocity.z,
+      driverId: b.userData?.driverId || null,
+      speed: b.userData?.speed || 0,
+    }));
+    const debrisOut = [...debris, ...goats, ...medkits, ...grenades, ...snipers, ...ammoPacks, ...vehicles];
     const ev = this.events;
     this.events = [];
     return {

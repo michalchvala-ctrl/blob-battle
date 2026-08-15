@@ -30,6 +30,7 @@ let grenadeCharge = 0;
 let grenadeHolding = false;
 let grenadeHoldStart = 0;
 let weaponSlotQueued = 0;
+let useQueued = false;
 let pointerLocked = false;
 let lookIgnoreUntil = 0;
 
@@ -244,6 +245,9 @@ socket.on("st", (st) => {
     world.hasSniper = !!me.hasSniper;
     world.weapon = me.weapon || "knife";
     world.ammo = me.ammo ?? 0;
+    world.inVehicle = !!me.vehicleId;
+  } else {
+    world.inVehicle = false;
   }
   const aliveN = st.players.filter((p) => p.alive).length;
   if (st.mode === "guns" && st.phase === "playing") {
@@ -273,7 +277,9 @@ socket.on("st", (st) => {
   }
   if ($("hint-bar")) {
     $("hint-bar").textContent = gunsOn
-      ? "1 nôž · 2 pištoľ · 3 odstrel. · klik · G dym · Shift beh · zber munície"
+      ? world.inVehicle
+        ? "Auto: WASD jazda · Shift turbo · E vystúp"
+        : "1 nôž · 2 pištoľ · 3 odstrel. · E auto · G dym · Shift beh"
       : "WASD · skok · klik úder · Shift beh · Esc uvoľní myš";
   }
 
@@ -456,6 +462,9 @@ window.addEventListener("keydown", (e) => {
   if (e.code === "Digit1" || e.code === "Numpad1") weaponSlotQueued = 1;
   if (e.code === "Digit2" || e.code === "Numpad2") weaponSlotQueued = 2;
   if (e.code === "Digit3" || e.code === "Numpad3") weaponSlotQueued = 3;
+  if (e.code === "KeyE" && world.gunsMode && !world.spectating && myId) {
+    useQueued = true;
+  }
   // G smoke — works for every player in guns mode (don't gate on fragile playing flag alone)
   if (e.code === "KeyG" && world.gunsMode && !world.spectating && myId) {
     grenadeHolding = true;
@@ -552,12 +561,13 @@ setInterval(() => {
     yaw: world.yaw,
     pitch: world.pitch,
     jump: jumpQueued,
-    punch: punchQueued,
-    shoot: punchQueued,
+    punch: punchQueued && !world.inVehicle,
+    shoot: punchQueued && !world.inVehicle,
     dash: false,
     sprint: !!(keys.ShiftLeft || keys.ShiftRight),
-    grenade: grenadeQueued,
+    grenade: grenadeQueued && !world.inVehicle,
     grenadeCharge: grenadeCharge,
+    use: useQueued,
   };
   if (weaponSlotQueued) payload.weaponSlot = weaponSlotQueued;
   socket.emit("in", payload);
@@ -566,6 +576,7 @@ setInterval(() => {
   dashQueued = false;
   grenadeQueued = false;
   weaponSlotQueued = 0;
+  useQueued = false;
 }, 1000 / 30);
 
 function loop() {

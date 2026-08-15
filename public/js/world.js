@@ -300,6 +300,7 @@ export class GameWorld {
     this.hasSniper = false;
     this.weapon = "knife";
     this.ammo = 20;
+    this.inVehicle = false;
     this.baseFov = 70;
     this.windParticles = null;
     this.gltfCache = new Map();
@@ -1216,6 +1217,7 @@ export class GameWorld {
     if (d.kind === "ammo") return this.makeAmmoMesh(d);
     if (d.kind === "grenade") return this.makeGrenadeMesh(d);
     if (d.kind === "sniper") return this.makeSniperPickupMesh(d);
+    if (d.kind === "vehicle") return this.makeVehicleMesh(d);
     const color = d.color || "#ff9e00";
     let geo;
     if (d.kind === "sphere") {
@@ -1234,6 +1236,29 @@ export class GameWorld {
     mesh.position.set(d.x, d.y, d.z);
     mesh.quaternion.set(d.qx, d.qy, d.qz, d.qw);
     return mesh;
+  }
+
+  makeVehicleMesh(d) {
+    const g = new THREE.Group();
+    const modelId = d.model || CAR_MODELS[0];
+    const proto = this.gltfCache.get(`car:${modelId}`);
+    const w = d.sx || 4.4;
+    const h = d.sy || 1.7;
+    const depth = d.sz || 2.2;
+    if (proto) {
+      const model = proto.clone(true);
+      this.fitGltfToBox(model, w, h, depth, { uniform: true });
+      model.position.y = -h * 0.5;
+      g.add(model);
+    } else {
+      const body = new THREE.Mesh(new THREE.BoxGeometry(w, h * 0.55, depth), toon(d.color || "#c44"));
+      body.position.y = -h * 0.15;
+      g.add(body);
+    }
+    g.userData.isVehicle = true;
+    g.position.set(d.x, d.y, d.z);
+    g.quaternion.set(d.qx || 0, d.qy || 0, d.qz || 0, d.qw ?? 1);
+    return g;
   }
 
   syncBoxes(list) {
@@ -1270,9 +1295,16 @@ export class GameWorld {
       seen.add(d.id);
       let mesh = this.debrisMeshes.get(d.id);
       const wantGoat = d.kind === "goat";
+      const wantVehicle = d.kind === "vehicle";
       if (mesh && wantGoat && !mesh.userData.isGoat) {
         this.props.remove(mesh);
         mesh.geometry?.dispose?.();
+        this.debrisMeshes.delete(d.id);
+        mesh = null;
+      }
+      if (mesh && wantVehicle && !mesh.userData.isVehicle) {
+        this.props.remove(mesh);
+        mesh.traverse?.((o) => o.geometry?.dispose?.());
         this.debrisMeshes.delete(d.id);
         mesh = null;
       }
@@ -1283,6 +1315,7 @@ export class GameWorld {
       }
       mesh.userData.t = d;
       if (wantGoat) mesh.userData.isGoat = true;
+      if (wantVehicle) mesh.userData.isVehicle = true;
     }
     for (const [id, mesh] of this.debrisMeshes) {
       if (!seen.has(id)) {
@@ -2063,7 +2096,7 @@ export class GameWorld {
     }
     this.fpsGun = this.fpsPistol;
 
-    const show = !!this.gunsMode && !this.spectating;
+    const show = !!this.gunsMode && !this.spectating && !this.inVehicle;
     const w = this.weapon || "knife";
     this.fpsPistol.visible = show && w === "pistol";
     this.fpsSniper.visible = show && w === "sniper";
