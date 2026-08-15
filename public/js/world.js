@@ -153,6 +153,8 @@ export class GameWorld {
     this.dayPhase = 0;
     this.aiming = false;
     this.hasSniper = false;
+    this.weapon = "knife";
+    this.ammo = 20;
     this.baseFov = 70;
     this.windParticles = null;
     this.gltfCache = new Map();
@@ -849,6 +851,21 @@ export class GameWorld {
     return g;
   }
 
+  makeAmmoMesh(d) {
+    const g = new THREE.Group();
+    const crate = new THREE.Mesh(new THREE.BoxGeometry(0.64, 0.4, 0.84), toon("#f0c14a"));
+    crate.castShadow = true;
+    const stripe = new THREE.Mesh(new THREE.BoxGeometry(0.7, 0.12, 0.2), toon("#1f2937"));
+    stripe.position.y = 0.12;
+    const bullet = new THREE.Mesh(new THREE.CylinderGeometry(0.08, 0.08, 0.35, 8), toon("#e8e8e8"));
+    bullet.rotation.z = Math.PI / 2;
+    bullet.position.set(0, 0.28, 0);
+    g.add(crate, stripe, bullet);
+    g.position.set(d.x, d.y, d.z);
+    g.quaternion.set(d.qx, d.qy, d.qz, d.qw);
+    return g;
+  }
+
   makeGrenadeMesh(d) {
     const g = new THREE.Group();
     const body = new THREE.Mesh(new THREE.SphereGeometry(0.28, 12, 10), toon(d.color || "#c5cdd4"));
@@ -952,6 +969,7 @@ export class GameWorld {
   makeDebrisMesh(d) {
     if (d.kind === "goat") return this.makeGoatMesh(d);
     if (d.kind === "medkit") return this.makeMedkitMesh(d);
+    if (d.kind === "ammo") return this.makeAmmoMesh(d);
     if (d.kind === "grenade") return this.makeGrenadeMesh(d);
     if (d.kind === "sniper") return this.makeSniperPickupMesh(d);
     const color = d.color || "#ff9e00";
@@ -1543,7 +1561,7 @@ export class GameWorld {
     this.windParticles.material.opacity = 0.22 + tNight * 0.12;
 
     // Sniper zoom FOV
-    const wantFov = this.aiming && this.hasSniper && this.gunsMode && !this.spectating ? 28 : this.baseFov;
+    const wantFov = this.aiming && this.weapon === "sniper" && this.gunsMode && !this.spectating ? 28 : this.baseFov;
     if (Math.abs(this.camera.fov - wantFov) > 0.2) {
       this.camera.fov += (wantFov - this.camera.fov) * Math.min(1, dt * 10);
       this.camera.updateProjectionMatrix();
@@ -1776,11 +1794,25 @@ export class GameWorld {
       const sight = new THREE.Mesh(new THREE.BoxGeometry(0.03, 0.05, 0.05), accent);
       sight.position.set(0, 0.1, 0.08);
       gun.add(grip, body, barrel, sight);
+      gun.userData.isGun = true;
       this.camera.add(gun);
       this.fpsGun = gun;
     }
-    this.fpsGun.visible = !!this.gunsMode && !this.spectating;
-    if (this.hasSniper) {
+    if (!this.fpsKnife) {
+      const knife = new THREE.Group();
+      const handle = new THREE.Mesh(new THREE.BoxGeometry(0.05, 0.12, 0.05), toon("#5c3a21"));
+      handle.position.set(0, -0.06, 0);
+      const blade = new THREE.Mesh(new THREE.BoxGeometry(0.04, 0.02, 0.32), toon("#cfd8e3"));
+      blade.position.set(0, 0.02, 0.18);
+      knife.add(handle, blade);
+      this.camera.add(knife);
+      this.fpsKnife = knife;
+    }
+    const show = !!this.gunsMode && !this.spectating;
+    const w = this.weapon || "knife";
+    this.fpsGun.visible = show && w !== "knife";
+    this.fpsKnife.visible = show && w === "knife";
+    if (w === "sniper") {
       this.fpsGun.scale.set(1.35, 1.1, 1.8);
       this.fpsGun.position.set(0.28, -0.22, -0.55);
     } else {
@@ -1788,6 +1820,8 @@ export class GameWorld {
       this.fpsGun.position.set(0.22, -0.18, -0.42);
     }
     this.fpsGun.rotation.set(0.05, 0.08, 0.12);
+    this.fpsKnife.position.set(0.2, -0.16, -0.35);
+    this.fpsKnife.rotation.set(0.15, 0.2, 0.35);
   }
 
   updateSunFollow(x, z) {

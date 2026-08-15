@@ -302,6 +302,9 @@ export class GameRoom {
     this.medkitSpawnT = 8 + Math.random() * 6;
     this.medkits = [];
     this.maxMedkits = 4;
+    this.ammoPacks = [];
+    this.maxAmmoPacks = 6;
+    this.ammoSpawnT = 6 + Math.random() * 4;
     this.grenades = [];
     this.smokes = [];
     this.smokeNextId = 1;
@@ -343,6 +346,9 @@ export class GameRoom {
     for (const m of this.medkits || []) this.world.removeBody(m);
     this.medkits = [];
     this.medkitSpawnT = 6 + Math.random() * 5;
+    for (const a of this.ammoPacks || []) this.world.removeBody(a);
+    this.ammoPacks = [];
+    this.ammoSpawnT = 5 + Math.random() * 4;
     for (const g of this.grenades || []) this.world.removeBody(g);
     this.grenades = [];
     this.smokes = [];
@@ -692,6 +698,8 @@ export class GameRoom {
         const dz = p.body.position.z - gun.position.z;
         if (Math.hypot(dx, dy, dz) < 1.8) {
           p.weapon = "sniper";
+          p.hasSniper = true;
+          p.ammo = (p.ammo || 0) + 5;
           this.world.removeBody(gun);
           this.snipers.splice(i, 1);
           this.events.push({ type: "sniperPickup", id: p.id, by: p.name });
@@ -1008,6 +1016,65 @@ export class GameRoom {
     }
   }
 
+  spawnAmmoPack() {
+    if (this.mode !== "guns") return;
+    if ((this.ammoPacks || []).length >= this.maxAmmoPacks) return;
+    const ang = Math.random() * Math.PI * 2;
+    const rr = 18 + Math.random() * 110;
+    let x = Math.cos(ang) * rr;
+    let z = Math.sin(ang) * rr;
+    if (this.tooCloseToStructure(x, z, 3.5)) {
+      x = Math.cos(ang + 0.8) * (rr * 0.65);
+      z = Math.sin(ang + 0.8) * (rr * 0.65);
+    }
+    const body = new CANNON.Body({
+      mass: 1.1,
+      material: this.boxMat,
+      shape: new CANNON.Box(new CANNON.Vec3(0.32, 0.22, 0.42)),
+      position: new CANNON.Vec3(x, 14 + Math.random() * 8, z),
+      linearDamping: 0.12,
+      angularDamping: 0.35,
+    });
+    body.velocity.set(0, -3, 0);
+    body.userData = {
+      id: this.debrisNextId++,
+      kind: "ammo",
+      color: "#f0c14a",
+      sx: 0.64,
+      sy: 0.44,
+      sz: 0.84,
+      amount: 12,
+    };
+    this.world.addBody(body);
+    this.ammoPacks.push(body);
+    this.events.push({ type: "ammoDrop", id: body.userData.id });
+  }
+
+  pickupAmmo() {
+    for (let i = this.ammoPacks.length - 1; i >= 0; i--) {
+      const pack = this.ammoPacks[i];
+      if (pack.position.y < -8) {
+        this.world.removeBody(pack);
+        this.ammoPacks.splice(i, 1);
+        continue;
+      }
+      for (const p of this.players.values()) {
+        if (!p.alive) continue;
+        const dx = p.body.position.x - pack.position.x;
+        const dy = p.body.position.y - pack.position.y;
+        const dz = p.body.position.z - pack.position.z;
+        if (Math.hypot(dx, dy, dz) < 1.7) {
+          const add = pack.userData?.amount || 12;
+          p.ammo = Math.min(90, (p.ammo || 0) + add);
+          this.world.removeBody(pack);
+          this.ammoPacks.splice(i, 1);
+          this.events.push({ type: "ammo", id: p.id, by: p.name, ammo: p.ammo });
+          break;
+        }
+      }
+    }
+  }
+
   /** Steer goats: idle until a player is within 20 m, then sprint-charge. */
   steerGoats(dt) {
     if (!this.goats.length) return;
@@ -1305,7 +1372,9 @@ export class GameRoom {
       punchFlash: 0,
       shootFlash: 0,
       hp: 100,
-      weapon: "pistol",
+      ammo: 20,
+      weapon: "knife",
+      hasSniper: false,
       lastHitBy: null,
       lastHitAt: 0,
       yaw: 0,
@@ -1316,8 +1385,9 @@ export class GameRoom {
     socket.join(this.code);
 
     if (this.phase === "playing") {
-      // late join – let them drop in
+      // late join – let them drop in and receive round state
       this.respawn(player, true);
+      socket.emit("round", this.roundPayload());
     }
     this.broadcastLobby();
     return { ok: true };
@@ -1355,6 +1425,16 @@ export class GameRoom {
       p.input.grenade = true;
       p.input.grenadeCharge = clamp(Number(data.grenadeCharge) || 0.35, 0.12, 1);
     }
+    const slot = Number(data.weaponSlot);
+    if (slot === 1 || slot === 2 || slot === 3) {
+      this.setWeaponSlot(p, slot);
+    }
+  }
+
+  setWeaponSlot(p, slot) {
+    if (slot === 1) p.weapon = "knife";
+    else if (slot === 2) p.weapon = "pistol";
+    else if (slot === 3 && p.hasSniper) p.weapon = "sniper";
   }
 
   setMode(id, mode) {
@@ -1433,15 +1513,20 @@ export class GameRoom {
       this.buildArena();
       this.nextCrackT = Infinity;
     }
-    // clear leftover medkits
+    // clear leftover medkits / ammo
     for (const m of this.medkits) this.world.removeBody(m);
     this.medkits = [];
     this.medkitSpawnT = 5 + Math.random() * 4;
+    for (const a of this.ammoPacks || []) this.world.removeBody(a);
+    this.ammoPacks = [];
+    this.ammoSpawnT = 4 + Math.random() * 3;
     const list = [...this.players.values()];
     list.forEach((p, i) => {
       p.alive = true;
       p.hp = 100;
-      p.weapon = "pistol";
+      p.ammo = 20;
+      p.weapon = "knife";
+      p.hasSniper = false;
       p.punchCd = 0;
       p.shootCd = 0;
       p.dashCd = 0;
@@ -1667,6 +1752,12 @@ export class GameRoom {
           this.medkitSpawnT = 7 + Math.random() * 8;
         }
         this.pickupMedkits();
+        this.ammoSpawnT -= dt;
+        if (this.ammoSpawnT <= 0) {
+          this.spawnAmmoPack();
+          this.ammoSpawnT = 9 + Math.random() * 10;
+        }
+        this.pickupAmmo();
       }
     }
     this.removeFallenProps();
@@ -1722,9 +1813,20 @@ export class GameRoom {
 
     if (this.mode === "guns") {
       if ((p.input.shoot || p.input.punch) && p.shootCd <= 0 && p.alive) {
-        this.doShoot(p);
-        p.shootCd = p.weapon === "sniper" ? 0.85 : 0.285;
-        p.shootFlash = 0.12;
+        const w = p.weapon || "knife";
+        if (w === "knife") {
+          this.doKnife(p);
+          p.shootCd = 0.42;
+          p.punchFlash = 0.18;
+        } else if ((p.ammo || 0) > 0) {
+          p.ammo -= 1;
+          this.doShoot(p);
+          p.shootCd = w === "sniper" ? 0.85 : 0.285;
+          p.shootFlash = 0.12;
+        } else {
+          this.events.push({ type: "empty", id: p.id });
+          p.shootCd = 0.25;
+        }
       }
       if (p.input.grenade && (p.grenadeCd || 0) <= 0 && p.alive) {
         this.throwGrenade(p, p.input.grenadeCharge || 0.4, p.input.pitch || 0);
@@ -1745,7 +1847,7 @@ export class GameRoom {
     }
   }
 
-  /** Any player can throw — dedicated path (not one-shot input flag). */
+  /** Any connected player can throw — dedicated socket event + input flag. */
   requestGrenade(id, data = {}) {
     const p = this.players.get(id);
     if (!p || !p.alive) return;
@@ -1757,6 +1859,7 @@ export class GameRoom {
       p.input.yaw = Number(data.yaw) || 0;
       p.yaw = p.input.yaw;
     }
+    p.input.pitch = pitch;
     this.throwGrenade(p, charge, pitch);
     p.grenadeCd = 2.6;
   }
@@ -1839,6 +1942,55 @@ export class GameRoom {
       this.smokes[i].life -= dt;
       if (this.smokes[i].life <= 0) this.smokes.splice(i, 1);
     }
+  }
+
+  doKnife(p) {
+    const origin = p.body.position;
+    const yaw = p.input.yaw || p.yaw || 0;
+    const pitch = clamp(p.input.pitch || 0, -1.52, 1.52);
+    const cosP = Math.cos(pitch);
+    const sinP = Math.sin(pitch);
+    const fx = -Math.sin(yaw) * cosP;
+    const fy = sinP;
+    const fz = -Math.cos(yaw) * cosP;
+    const reach = 2.35;
+    let hit = null;
+    let best = reach;
+    for (const o of this.players.values()) {
+      if (o === p || !o.alive) continue;
+      const dx = o.body.position.x - origin.x;
+      const dy = o.body.position.y - origin.y;
+      const dz = o.body.position.z - origin.z;
+      const dist = Math.hypot(dx, dy, dz);
+      if (dist > reach || dist < 0.05) continue;
+      const inv = 1 / dist;
+      const dot = dx * inv * fx + dy * inv * fy + dz * inv * fz;
+      if (dot < 0.45) continue;
+      if (dist < best) {
+        best = dist;
+        hit = o;
+      }
+    }
+    this.events.push({ type: "knife", id: p.id, by: p.name, hit: !!hit });
+    if (!hit) return;
+    hit.hp = Math.max(0, (hit.hp ?? 100) - 34);
+    hit.lastHitBy = p.id;
+    hit.lastHitAt = this.roundT;
+    hit.body.velocity.x += fx * 6;
+    hit.body.velocity.z += fz * 6;
+    hit.body.velocity.y += 3.5;
+    this.events.push({
+      type: "hit",
+      id: hit.id,
+      by: p.name,
+      victim: hit.name,
+      hp: Math.round(hit.hp),
+      x: hit.body.position.x,
+      y: hit.body.position.y,
+      z: hit.body.position.z,
+      knife: true,
+    });
+    if (hit.hp <= 0) this.kill(hit, "shot");
   }
 
   doShoot(p) {
@@ -1927,7 +2079,7 @@ export class GameRoom {
         }
       }
       for (const body of props) {
-        if (body.userData?.kind === "medkit" || body.userData?.kind === "sniper" || body.userData?.kind === "ladder")
+        if (body.userData?.kind === "medkit" || body.userData?.kind === "sniper" || body.userData?.kind === "ladder" || body.userData?.kind === "ammo")
           continue;
         const t = this.raycastBody(ox, oy, oz, fx, fy, fz, body, hitT);
         if (t == null || t >= hitT) continue;
@@ -2414,7 +2566,9 @@ export class GameRoom {
         shoot: (p.shootFlash || 0) > 0,
         dashCd: p.dashCd,
         hp: p.hp ?? 100,
-        weapon: p.weapon || "pistol",
+        ammo: p.ammo ?? 0,
+        weapon: p.weapon || "knife",
+        hasSniper: !!p.hasSniper,
       });
     }
     const boxes = this.boxes.map((b, i) => ({
@@ -2524,8 +2678,27 @@ export class GameRoom {
       vy: b.velocity.y,
       vz: b.velocity.z,
     }));
-    // Client still reads one debris list — merge goats + medkits + grenades + snipers
-    const debrisOut = [...debris, ...goats, ...medkits, ...grenades, ...snipers];
+    const ammoPacks = (this.ammoPacks || []).map((b) => ({
+      id: b.userData?.id ?? 0,
+      kind: "ammo",
+      color: "#f0c14a",
+      sx: b.userData?.sx ?? 0.64,
+      sy: b.userData?.sy ?? 0.44,
+      sz: b.userData?.sz ?? 0.84,
+      x: b.position.x,
+      y: b.position.y,
+      z: b.position.z,
+      qx: b.quaternion.x,
+      qy: b.quaternion.y,
+      qz: b.quaternion.z,
+      qw: b.quaternion.w,
+      yaw: 0,
+      vx: b.velocity.x,
+      vy: b.velocity.y,
+      vz: b.velocity.z,
+    }));
+    // Client still reads one debris list — merge goats + medkits + grenades + snipers + ammo
+    const debrisOut = [...debris, ...goats, ...medkits, ...grenades, ...snipers, ...ammoPacks];
     const ev = this.events;
     this.events = [];
     return {

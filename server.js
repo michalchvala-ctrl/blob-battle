@@ -91,7 +91,10 @@ io.on("connection", (socket) => {
   });
 
   socket.on("nade", (data) => {
-    rooms.get(socket.data.code)?.requestGrenade(socket.id, data || {});
+    const code = socket.data.code;
+    const room = rooms.get(code);
+    if (!room) return;
+    room.requestGrenade(socket.id, data || {});
   });
 
   socket.on("disconnect", () => {

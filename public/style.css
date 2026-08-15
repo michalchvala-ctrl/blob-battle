@@ -352,6 +352,38 @@ button.ghost {
   transition: width 0.15s ease;
 }
 
+.weapon-hud {
+  position: absolute;
+  right: 18px;
+  bottom: 52px;
+  min-width: 140px;
+  background: #120418cc;
+  border: 1px solid #ffffff22;
+  border-radius: 12px;
+  padding: 10px 14px;
+  pointer-events: none;
+  text-align: right;
+}
+
+.weapon-name {
+  font-weight: 800;
+  font-size: 15px;
+  color: #fff7fb;
+}
+
+.ammo-text {
+  font-weight: 800;
+  font-size: 22px;
+  color: #f0c14a;
+  margin-top: 2px;
+}
+
+.weapon-slots {
+  margin-top: 4px;
+  font-size: 11px;
+  color: #e9c9ffaa;
+}
+
 .arena-label {
   margin: 4px 0 8px;
 }
