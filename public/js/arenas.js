@@ -134,16 +134,9 @@ export function buildPresetLayout(id) {
         cyl(0, 0, 2.6),
       ]);
     case "battlefield": {
-      // Guns mode: 300×300 m flat square
+      // Guns mode: 300×300 m flat square (spawns are random on server)
       const S = 300;
-      const pieces = [box(0, 0, S, S)];
-      const L = layout("battlefield", pieces);
-      const ring = S * 0.38;
-      L.spawns = Array.from({ length: 8 }, (_, i) => {
-        const a = (i / 8) * Math.PI * 2 - Math.PI / 8;
-        return { x: Math.cos(a) * ring, z: Math.sin(a) * ring };
-      });
-      return L;
+      return layout("battlefield", [box(0, 0, S, S)]);
     }
     default:
       return buildPresetLayout("circle");

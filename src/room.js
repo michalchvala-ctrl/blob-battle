@@ -916,25 +916,61 @@ export class GameRoom {
   }
 
   spawnPos(index, count) {
-    const spots = this.layout?.spawns;
-    if (spots?.length) {
-      const s = spots[index % spots.length];
-      // slight spread when more players than unique offsets
-      const n = Math.max(count, 1);
-      const jitter = ((index / n) * Math.PI * 2) % (Math.PI * 2);
-      const jx = Math.cos(jitter) * 0.35;
-      const jz = Math.sin(jitter) * 0.35;
-      const x = s.x + jx;
-      const z = s.z + jz;
-      if (this.overAttachedPlatform(x, z, 0.2)) {
-        return new CANNON.Vec3(x, 2.4, z);
-      }
-      return new CANNON.Vec3(s.x, 2.4, s.z);
-    }
-    const n = Math.max(count, 1);
-    const ang = (index / n) * Math.PI * 2 - Math.PI / 2;
-    const r = Math.min(8, this.platformRadius * 0.55);
+    const pos = this.randomMapSpawn();
+    if (pos) return pos;
+    // Fallback: ring near center
+    const n = Math.max(count || this.players.size || 1, 1);
+    const i = Math.max(index || 0, 0);
+    const ang = (i / n) * Math.PI * 2 - Math.PI / 2;
+    const r = Math.min(8, this.platformRadius * 0.45);
     return new CANNON.Vec3(Math.cos(ang) * r, 2.4, Math.sin(ang) * r);
+  }
+
+  /** Random walkable point on the current map, away from buildings/trees/other players. */
+  randomMapSpawn(minPlayerDist = 8) {
+    const pieces = this.layout?.pieces;
+    const others = [...this.players.values()].map((p) => p.body.position);
+    const margin = this.platformRadius > 40 ? 12 : 1.2;
+    const farFromOthers = (x, z) => {
+      const need = this.platformRadius > 40 ? Math.max(minPlayerDist, 14) : Math.max(2.5, minPlayerDist * 0.35);
+      for (const o of others) {
+        if (Math.hypot(x - o.x, z - o.z) < need) return false;
+      }
+      return true;
+    };
+
+    for (let attempt = 0; attempt < 48; attempt++) {
+      let x;
+      let z;
+      if (pieces?.length) {
+        const p = pieces[(Math.random() * pieces.length) | 0];
+        if (p.t === "cyl" || p.t === "tri") {
+          const ang = Math.random() * Math.PI * 2;
+          const rr = Math.max(0.2, p.r - margin) * Math.sqrt(Math.random());
+          x = p.x + Math.cos(ang) * rr;
+          z = p.z + Math.sin(ang) * rr;
+        } else {
+          const hw = Math.max(0.5, p.w * 0.5 - margin);
+          const hd = Math.max(0.5, p.d * 0.5 - margin);
+          const lx = (Math.random() * 2 - 1) * hw;
+          const lz = (Math.random() * 2 - 1) * hd;
+          const c = Math.cos(p.rotY || 0);
+          const s = Math.sin(p.rotY || 0);
+          x = p.x + lx * c + lz * s;
+          z = p.z - lx * s + lz * c;
+        }
+      } else {
+        const ang = Math.random() * Math.PI * 2;
+        const rr = Math.max(1, this.platformRadius - margin) * Math.sqrt(Math.random());
+        x = Math.cos(ang) * rr;
+        z = Math.sin(ang) * rr;
+      }
+      if (!this.overAttachedPlatform(x, z, 0.2)) continue;
+      if (this.tooCloseToStructure(x, z, 3.5)) continue;
+      if (!farFromOthers(x, z) && attempt < 36) continue;
+      return new CANNON.Vec3(x, 2.4, z);
+    }
+    return null;
   }
 
   addPlayer(socket, name) {
