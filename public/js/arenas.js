@@ -11,7 +11,7 @@ export const ARENA_INFO = {
   star: { name: "Hviezda", blurb: "Okvetné lístky" },
   corridor: { name: "Cesta", blurb: "Dlhá chodba" },
   islands: { name: "Ostrovčeky", blurb: "Niekoľko plošín" },
-  random: { name: "Náhodný", blurb: "Každé kolo iný tvar" },
+  random: { name: "Generovaná", blurb: "Nový náhodný tvar každé kolo" },
 };
 
 export const PRESET_IDS = [
@@ -138,36 +138,143 @@ export function buildPresetLayout(id) {
   }
 }
 
-/** Procedural 3–6 islands (boxes / cylinders). */
-export function buildProceduralLayout() {
-  const n = 3 + ((Math.random() * 4) | 0);
-  const pieces = [];
-  for (let i = 0; i < n; i++) {
-    const ang = (i / n) * Math.PI * 2 + Math.random() * 0.4;
-    const dist = 4 + Math.random() * 7;
+const PROC_COLORS = ["#ff7ad9", "#ff8ec4", "#e87ad9", "#ff9ad0", "#f06bb8", "#ffa0d8"];
+
+function tint(piece, i) {
+  piece.color = PROC_COLORS[i % PROC_COLORS.length];
+  return piece;
+}
+
+/** Overlapping blob — one walkable mass of random boxes/cylinders. */
+function proceduralBlob() {
+  const n = 4 + ((Math.random() * 5) | 0); // 4–8
+  const pieces = [tint(cyl(0, 0, 3.2 + Math.random() * 2.2), 0)];
+  for (let i = 1; i < n; i++) {
+    const ang = Math.random() * Math.PI * 2;
+    const dist = 2.2 + Math.random() * 5.5;
     const x = Math.cos(ang) * dist;
     const z = Math.sin(ang) * dist;
-    if (Math.random() < 0.55) {
-      pieces.push(cyl(x, z, 2.4 + Math.random() * 2.4));
+    if (Math.random() < 0.5) {
+      pieces.push(tint(cyl(x, z, 2.6 + Math.random() * 2.8), i));
     } else {
-      const w = 4 + Math.random() * 5;
-      const d = 4 + Math.random() * 5;
-      pieces.push(box(x, z, w, d, Math.random() * Math.PI));
+      pieces.push(
+        tint(box(x, z, 4.2 + Math.random() * 5.5, 4.2 + Math.random() * 5.5, Math.random() * Math.PI), i),
+      );
     }
   }
-  return layout("proc", pieces);
+  return pieces;
+}
+
+/** Ring of pads linked by short bridges — fun for chase / sumo. */
+function proceduralRing() {
+  const n = 3 + ((Math.random() * 4) | 0); // 3–6 pads
+  const R = 6.5 + Math.random() * 3.5;
+  const pieces = [];
+  const pads = [];
+  for (let i = 0; i < n; i++) {
+    const ang = (i / n) * Math.PI * 2 + Math.random() * 0.2;
+    const x = Math.cos(ang) * R;
+    const z = Math.sin(ang) * R;
+    pads.push({ x, z, ang });
+    if (Math.random() < 0.55) {
+      pieces.push(tint(cyl(x, z, 2.8 + Math.random() * 1.8), i));
+    } else {
+      pieces.push(tint(box(x, z, 5 + Math.random() * 2.5, 5 + Math.random() * 2.5, ang), i));
+    }
+  }
+  // Bridges between neighbors (+ optional hub)
+  for (let i = 0; i < n; i++) {
+    const a = pads[i];
+    const b = pads[(i + 1) % n];
+    const mx = (a.x + b.x) * 0.5;
+    const mz = (a.z + b.z) * 0.5;
+    const len = Math.hypot(b.x - a.x, b.z - a.z);
+    const rot = Math.atan2(b.x - a.x, b.z - a.z);
+    pieces.push(tint(box(mx, mz, 3.2 + Math.random() * 1.2, Math.max(4.5, len * 0.92), rot), n + i));
+  }
+  if (Math.random() < 0.65) {
+    pieces.push(tint(cyl(0, 0, 2.4 + Math.random() * 1.6), n * 2));
+  }
+  return pieces;
+}
+
+/** Irregular outline approximated by rotated boxes + center fill. */
+function proceduralPoly() {
+  const n = 5 + ((Math.random() * 4) | 0); // 5–8 edges
+  const pieces = [];
+  const verts = [];
+  for (let i = 0; i < n; i++) {
+    const ang = (i / n) * Math.PI * 2;
+    const r = 7 + Math.random() * 5;
+    verts.push({ x: Math.cos(ang) * r, z: Math.sin(ang) * r });
+  }
+  for (let i = 0; i < n; i++) {
+    const a = verts[i];
+    const b = verts[(i + 1) % n];
+    const mx = (a.x + b.x) * 0.5;
+    const mz = (a.z + b.z) * 0.5;
+    const len = Math.hypot(b.x - a.x, b.z - a.z);
+    const rot = Math.atan2(b.x - a.x, b.z - a.z);
+    pieces.push(tint(box(mx, mz, 4.5 + Math.random() * 2, Math.max(5, len * 1.05), rot), i));
+  }
+  pieces.push(tint(cyl(0, 0, 4 + Math.random() * 2.5), n));
+  // A few interior blobs so the middle is not empty
+  const extras = 1 + ((Math.random() * 2) | 0);
+  for (let i = 0; i < extras; i++) {
+    const ang = Math.random() * Math.PI * 2;
+    const dist = 2 + Math.random() * 4;
+    pieces.push(
+      tint(
+        Math.random() < 0.5
+          ? cyl(Math.cos(ang) * dist, Math.sin(ang) * dist, 2.5 + Math.random() * 2)
+          : box(
+              Math.cos(ang) * dist,
+              Math.sin(ang) * dist,
+              4 + Math.random() * 3,
+              4 + Math.random() * 3,
+              Math.random() * Math.PI,
+            ),
+        n + 1 + i,
+      ),
+    );
+  }
+  return pieces;
+}
+
+/**
+ * True procedural arena (never a preset). Walkable for 2+ players:
+ * overlapping blob, bridged ring, or irregular polygon-ish mass.
+ */
+export function buildProceduralLayout() {
+  const roll = Math.random();
+  let pieces;
+  if (roll < 0.34) pieces = proceduralBlob();
+  else if (roll < 0.67) pieces = proceduralRing();
+  else pieces = proceduralPoly();
+  // Clamp to a sensible playable footprint
+  const L = layout("random", pieces);
+  if (L.radius > 22) {
+    const s = 22 / L.radius;
+    for (const p of pieces) {
+      p.x *= s;
+      p.z *= s;
+      if (p.t === "cyl" || p.t === "tri") p.r *= s;
+      else {
+        p.w *= s;
+        p.d *= s;
+      }
+    }
+    return layout("random", pieces);
+  }
+  return L;
 }
 
 /**
  * Resolve lobby selection to a concrete layout.
- * `random` → preset or procedural each call.
+ * `random` → brand-new procedural shape every call (lobby preview + each round).
  */
 export function resolveArenaLayout(arenaId) {
-  if (arenaId === "random") {
-    if (Math.random() < 0.55) {
-      const id = PRESET_IDS[(Math.random() * PRESET_IDS.length) | 0];
-      return buildPresetLayout(id);
-    }
+  if (arenaId === "random" || arenaId === "nahodny") {
     return buildProceduralLayout();
   }
   return buildPresetLayout(arenaId);

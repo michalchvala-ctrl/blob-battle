@@ -252,7 +252,7 @@ export class GameWorld {
   makePadPiece(p) {
     const g = new THREE.Group();
     const h = p.h || 1.15;
-    const pink = toon("#ff7ad9");
+    const pink = toon(p.color || "#ff7ad9");
     const gold = toon("#ffd36a");
     const cream = toon("#fff1a8");
 

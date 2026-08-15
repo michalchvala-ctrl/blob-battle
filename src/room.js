@@ -299,7 +299,15 @@ export class GameRoom {
     this.debrisSpawnT = 2 + Math.random() * 2;
     this.clearShards();
     this.layout = layout;
-    this.layoutKey = `${layout.id}:${layout.pieces.map((p) => `${p.t},${p.x},${p.z}`).join("|")}`;
+    // Include sizes/rotation so procedural regenerations always force a client rebuild
+    this.layoutKey = `${layout.id}:${layout.pieces
+      .map((p) => {
+        if (p.t === "cyl" || p.t === "tri") {
+          return `${p.t},${p.x.toFixed(2)},${p.z.toFixed(2)},${p.r.toFixed(2)}`;
+        }
+        return `${p.t},${p.x.toFixed(2)},${p.z.toFixed(2)},${p.w.toFixed(2)},${p.d.toFixed(2)},${(p.rotY || 0).toFixed(3)}`;
+      })
+      .join("|")}`;
     this.platformRadius = layout.radius;
 
     const useHillShards =
