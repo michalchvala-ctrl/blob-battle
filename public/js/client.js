@@ -234,10 +234,12 @@ socket.on("st", (st) => {
   world.syncBoxes(st.boxes);
   world.syncDebris(st.debris);
   world.syncSmokes?.(st.smokes);
+  world.setAtmosphere?.(st.dayPhase, st.windAngle);
   if (st.shards) world.syncShards(st.shards);
   world.setBomb(st.bombId);
 
   const me = st.players.find((p) => p.id === myId);
+  if (me) world.hasSniper = me.weapon === "sniper";
   const aliveN = st.players.filter((p) => p.alive).length;
   if (st.mode === "guns" && st.phase === "playing") {
     $("alive-pill").textContent = `${st.roundKills || 0}/30 zabití`;
@@ -258,8 +260,8 @@ socket.on("st", (st) => {
   }
   if ($("hint-bar")) {
     $("hint-bar").textContent = gunsOn
-      ? "WASD · skok · klik STREĽBA · G dymový granát · Shift beh · reset po 30 zabitiach"
-      : "WASD · skok · klik úder · Shift beh · pohľad 1. osoba · Esc uvoľní myš";
+      ? "WASD · rebrik na strechu · klik STREĽBA · RMB zoom (odstrelovačka) · G dym · Shift beh"
+      : "WASD · skok · klik úder · Shift beh · Esc uvoľní myš";
   }
 
   if (st.phase === "playing" && me && !me.alive) {
@@ -391,6 +393,15 @@ function handleEvent(ev) {
   } else if (ev.type === "grenadeBoom") {
     // legacy
     sfx.boom();
+  } else if (ev.type === "sniperDrop") {
+    text = "🎯 Odstrelovačka padá z neba!";
+    sfx.whoosh();
+  } else if (ev.type === "sniperPickup") {
+    text = `${ev.by} zobral odstrelovačku`;
+    sfx.pass();
+  } else if (ev.type === "goatKill") {
+    text = `${ev.by} zabil kozu`;
+    sfx.punch();
   } else if (ev.type === "medkit") {
     text = `${ev.by} zobral lekárničku (${ev.hp}%)`;
     sfx.pass();
@@ -450,7 +461,14 @@ $("view").addEventListener("mousedown", (e) => {
     }
     if (!pointerLocked) lockPointer();
   }
+  if (e.button === 2 && world.hasSniper) {
+    world.aiming = true;
+  }
 });
+$("view").addEventListener("mouseup", (e) => {
+  if (e.button === 2) world.aiming = false;
+});
+$("view").addEventListener("contextmenu", (e) => e.preventDefault());
 
 document.addEventListener("pointerlockchange", () => {
   const wasLocked = pointerLocked;

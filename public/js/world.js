@@ -142,6 +142,12 @@ export class GameWorld {
     this.pitch = 0.14;
     this.invertMouseY = true;
     this.bleedAcc = 0;
+    this.windAngle = 0;
+    this.dayPhase = 0;
+    this.aiming = false;
+    this.hasSniper = false;
+    this.baseFov = 70;
+    this.windParticles = null;
     this.camDist = 6.8;
     this.camHeight = 1.9;
     this.snapCam = false;
@@ -298,6 +304,7 @@ export class GameWorld {
       trunk.position.y = 0.575 + trunkH * 0.5;
       trunk.castShadow = true;
       trunk.receiveShadow = true;
+      const canopy = new THREE.Group();
       const leaf = new THREE.Mesh(new THREE.SphereGeometry(canopyR, 10, 8), toon(s.color || "#3ecf6a"));
       leaf.position.y = 0.575 + trunkH + canopyR * 0.55;
       leaf.castShadow = true;
@@ -308,36 +315,97 @@ export class GameWorld {
       );
       leaf2.position.set(canopyR * 0.25, leaf.position.y + canopyR * 0.2, -canopyR * 0.15);
       leaf2.castShadow = true;
-      g.add(trunk, leaf, leaf2);
+      canopy.add(leaf, leaf2);
+      g.add(trunk, canopy);
+      g.userData.isTree = true;
+      g.userData.canopy = canopy;
     } else {
       const h = s.h || 8;
       const w = s.w || 8;
       const d = s.d || 8;
-      const body = new THREE.Mesh(new THREE.BoxGeometry(w, h, d), toon(s.color || "#ff8ec4"));
-      body.position.y = 0.575 + h * 0.5;
-      body.castShadow = true;
-      body.receiveShadow = true;
-      const roof = new THREE.Mesh(
-        new THREE.BoxGeometry(w * 1.08, Math.min(2.2, h * 0.18), d * 1.08),
-        toon("#fff1a8"),
-      );
-      roof.position.y = 0.575 + h + Math.min(1.1, h * 0.09);
+      const col = toon(s.color || "#ff8ec4");
+      const dark = toon("#4a2040");
+      const glass = new THREE.MeshBasicMaterial({
+        color: "#7ec8ff",
+        transparent: true,
+        opacity: 0.35,
+        depthWrite: false,
+      });
+      const floor = new THREE.Mesh(new THREE.BoxGeometry(w, 0.25, d), dark);
+      floor.position.y = 0.7;
+      floor.receiveShadow = true;
+      const roof = new THREE.Mesh(new THREE.BoxGeometry(w * 1.06, 0.35, d * 1.06), toon("#fff1a8"));
+      roof.position.y = 0.575 + h + 0.2;
       roof.castShadow = true;
-      const winMat = toon("#ffe66d");
-      const mkWin = (lx, ly, lz) => {
-        const wMesh = new THREE.Mesh(new THREE.BoxGeometry(1.2, 1.4, 0.2), winMat);
-        wMesh.position.set(lx, ly, lz);
-        g.add(wMesh);
+      roof.receiveShadow = true;
+      g.add(floor, roof);
+
+      const thick = 0.4;
+      const winW = Math.min(2.4, w * 0.28);
+      const winH = Math.min(2.2, h * 0.28);
+      const winY = 0.575 + h * 0.45;
+      const doorW = Math.min(2.1, w * 0.32);
+      const doorH = Math.min(h * 0.72, 3.2);
+      const mkWallFace = (axis, sign, door = false) => {
+        const alongX = axis === "z";
+        const len = alongX ? w : d;
+        const gapW = door ? doorW : winW;
+        const panel = (len * 0.5 - gapW * 0.5) * 0.5;
+        const off = gapW * 0.5 + panel;
+        for (const sgn of [-1, 1]) {
+          const wall = new THREE.Mesh(
+            alongX
+              ? new THREE.BoxGeometry(panel * 2, h, thick)
+              : new THREE.BoxGeometry(thick, h, panel * 2),
+            col,
+          );
+          wall.position.set(
+            alongX ? sgn * off : sign * (w * 0.5 - thick * 0.5),
+            0.575 + h * 0.5,
+            alongX ? sign * (d * 0.5 - thick * 0.5) : sgn * off,
+          );
+          wall.castShadow = true;
+          wall.receiveShadow = true;
+          g.add(wall);
+        }
+        if (door) {
+          const lintel = new THREE.Mesh(new THREE.BoxGeometry(doorW + 0.3, Math.max(0.4, h - doorH), thick), col);
+          lintel.position.set(0, 0.575 + h - Math.max(0.2, (h - doorH) * 0.5), sign * (d * 0.5 - thick * 0.5));
+          lintel.castShadow = true;
+          g.add(lintel);
+        } else {
+          const pane = new THREE.Mesh(new THREE.BoxGeometry(winW, winH, 0.08), glass);
+          pane.position.set(
+            alongX ? 0 : sign * (w * 0.5 - thick * 0.5),
+            winY,
+            alongX ? sign * (d * 0.5 - thick * 0.5) : 0,
+          );
+          g.add(pane);
+        }
       };
-      const wy = 0.575 + h * 0.45;
-      mkWin(0, wy, d * 0.5 + 0.05);
-      mkWin(0, wy, -d * 0.5 - 0.05);
-      mkWin(w * 0.5 + 0.05, wy, 0);
-      mkWin(-w * 0.5 - 0.05, wy, 0);
-      g.add(body, roof);
-      if (s.rotY) g.rotation.y = s.rotY;
+      mkWallFace("z", 1);
+      mkWallFace("z", -1, true);
+      mkWallFace("x", 1);
+      mkWallFace("x", -1);
+
+      // Ladder on +Z
+      const ladder = new THREE.Group();
+      const railMat = toon("#8b5a2b");
+      for (const lx of [-0.35, 0.35]) {
+        const rail = new THREE.Mesh(new THREE.BoxGeometry(0.08, h, 0.08), railMat);
+        rail.position.set(lx, 0.575 + h * 0.5, d * 0.5 + 0.55);
+        ladder.add(rail);
+      }
+      const steps = Math.max(6, (h / 0.7) | 0);
+      for (let i = 0; i < steps; i++) {
+        const step = new THREE.Mesh(new THREE.BoxGeometry(0.8, 0.06, 0.12), railMat);
+        step.position.set(0, 0.7 + i * (h / steps), d * 0.5 + 0.55);
+        ladder.add(step);
+      }
+      g.add(ladder);
     }
     g.position.set(s.x || 0, 0, s.z || 0);
+    if (s.rotY) g.rotation.y = s.rotY;
     return g;
   }
 
@@ -671,6 +739,20 @@ export class GameWorld {
     return g;
   }
 
+  makeSniperPickupMesh(d) {
+    const g = new THREE.Group();
+    const mat = toon("#1f2937");
+    const body = new THREE.Mesh(new THREE.BoxGeometry(1.15, 0.14, 0.16), mat);
+    const barrel = new THREE.Mesh(new THREE.BoxGeometry(0.7, 0.08, 0.08), toon("#111827"));
+    barrel.position.x = 0.7;
+    const scope = new THREE.Mesh(new THREE.CylinderGeometry(0.07, 0.07, 0.28, 8), toon("#4b5563"));
+    scope.rotation.z = Math.PI / 2;
+    scope.position.set(0.1, 0.14, 0);
+    g.add(body, barrel, scope);
+    g.position.set(d.x || 0, d.y || 0, d.z || 0);
+    return g;
+  }
+
   spawnGrenadeBoom(ev) {
     // legacy explosive VFX unused for smoke grenades
     if (!ev) return;
@@ -748,6 +830,7 @@ export class GameWorld {
     if (d.kind === "goat") return this.makeGoatMesh(d);
     if (d.kind === "medkit") return this.makeMedkitMesh(d);
     if (d.kind === "grenade") return this.makeGrenadeMesh(d);
+    if (d.kind === "sniper") return this.makeSniperPickupMesh(d);
     const color = d.color || "#ff9e00";
     let geo;
     if (d.kind === "sphere") {
@@ -1250,7 +1333,98 @@ export class GameWorld {
     }
     this.updateBlood(dt);
     this.updateBleed(dt);
+    this.updateAtmosphere(dt);
     this.renderer.render(this.scene, this.camera);
+  }
+
+  setAtmosphere(dayPhase, windAngle) {
+    if (dayPhase != null) this.dayPhase = dayPhase;
+    if (windAngle != null) this.windAngle = windAngle;
+  }
+
+  updateAtmosphere(dt) {
+    const phase = this.dayPhase || 0;
+    // Day/night blend factor 0 = day, 1 = night
+    let tNight = 0;
+    if (phase < 0.08) tNight = 1 - phase / 0.08;
+    else if (phase < 0.42) tNight = 0;
+    else if (phase < 0.58) tNight = (phase - 0.42) / 0.16;
+    else if (phase < 0.92) tNight = 1;
+    else tNight = 1 - (phase - 0.92) / 0.08;
+
+    const dayCol = new THREE.Color("#87b7ff");
+    const nightCol = new THREE.Color("#0a0618");
+    const bg = dayCol.clone().lerp(nightCol, tNight);
+    this.scene.background.copy(bg);
+    if (this.scene.fog) {
+      this.scene.fog.color.copy(bg);
+      this.scene.fog.near = 40 + tNight * 20;
+      this.scene.fog.far = 160 + tNight * 40;
+    }
+    this.scene.traverse((o) => {
+      if (o.isHemisphereLight) {
+        o.intensity = 1.15 - tNight * 0.85;
+      }
+      if (o.isDirectionalLight) {
+        o.intensity = 1.35 - tNight * 1.05;
+      }
+      if (o.isAmbientLight) {
+        o.intensity = 0.18 + tNight * 0.12;
+      }
+    });
+
+    // Tree sway
+    const wind = this.windAngle || 0;
+    if (this.structureGroup) {
+      for (const child of this.structureGroup.children) {
+        if (!child.userData?.isTree) continue;
+        const sway = Math.sin(wind * 2 + child.position.x * 0.05) * 0.12;
+        if (child.userData.canopy) child.userData.canopy.rotation.z = sway;
+        else child.rotation.z = sway * 0.5;
+      }
+    }
+
+    // Wind particles
+    if (!this.windParticles) {
+      const geo = new THREE.BufferGeometry();
+      const N = 400;
+      const pos = new Float32Array(N * 3);
+      for (let i = 0; i < N; i++) {
+        pos[i * 3] = (Math.random() - 0.5) * 280;
+        pos[i * 3 + 1] = 1 + Math.random() * 18;
+        pos[i * 3 + 2] = (Math.random() - 0.5) * 280;
+      }
+      geo.setAttribute("position", new THREE.BufferAttribute(pos, 3));
+      const mat = new THREE.PointsMaterial({
+        color: "#ffffff",
+        size: 0.35,
+        transparent: true,
+        opacity: 0.35,
+        depthWrite: false,
+      });
+      this.windParticles = new THREE.Points(geo, mat);
+      this.scene.add(this.windParticles);
+    }
+    const arr = this.windParticles.geometry.attributes.position.array;
+    const wx = Math.cos(wind) * 18 * dt;
+    const wz = Math.sin(wind) * 18 * dt;
+    for (let i = 0; i < arr.length; i += 3) {
+      arr[i] += wx;
+      arr[i + 2] += wz;
+      if (arr[i] > 140) arr[i] -= 280;
+      if (arr[i] < -140) arr[i] += 280;
+      if (arr[i + 2] > 140) arr[i + 2] -= 280;
+      if (arr[i + 2] < -140) arr[i + 2] += 280;
+    }
+    this.windParticles.geometry.attributes.position.needsUpdate = true;
+    this.windParticles.material.opacity = 0.22 + tNight * 0.12;
+
+    // Sniper zoom FOV
+    const wantFov = this.aiming && this.hasSniper && this.gunsMode && !this.spectating ? 28 : this.baseFov;
+    if (Math.abs(this.camera.fov - wantFov) > 0.2) {
+      this.camera.fov += (wantFov - this.camera.fov) * Math.min(1, dt * 10);
+      this.camera.updateProjectionMatrix();
+    }
   }
 
   updateBleed(dt) {
@@ -1483,7 +1657,13 @@ export class GameWorld {
       this.fpsGun = gun;
     }
     this.fpsGun.visible = !!this.gunsMode && !this.spectating;
-    this.fpsGun.position.set(0.22, -0.18, -0.42);
+    if (this.hasSniper) {
+      this.fpsGun.scale.set(1.35, 1.1, 1.8);
+      this.fpsGun.position.set(0.28, -0.22, -0.55);
+    } else {
+      this.fpsGun.scale.set(1, 1, 1);
+      this.fpsGun.position.set(0.22, -0.18, -0.42);
+    }
     this.fpsGun.rotation.set(0.05, 0.08, 0.12);
   }
 

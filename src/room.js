@@ -267,8 +267,8 @@ export class GameRoom {
     );
     this.world.addContactMaterial(
       new CANNON.ContactMaterial(this.goatMat, this.groundMat, {
-        friction: 0.05,
-        restitution: 0.02,
+        friction: 0.0,
+        restitution: 0.0,
       }),
     );
     this.world.addContactMaterial(
@@ -305,6 +305,11 @@ export class GameRoom {
     this.grenades = [];
     this.smokes = [];
     this.smokeNextId = 1;
+    this.snipers = [];
+    this.sniperSpawnT = 45;
+    this.ladders = [];
+    this.windAngle = 0;
+    this.dayPhase = 0;
     this.nextCrackT = Infinity;
     this.applyLayout(resolveArenaLayout("circle"));
   }
@@ -341,6 +346,10 @@ export class GameRoom {
     for (const g of this.grenades || []) this.world.removeBody(g);
     this.grenades = [];
     this.smokes = [];
+    for (const s of this.snipers || []) this.world.removeBody(s);
+    this.snipers = [];
+    this.sniperSpawnT = 8 + Math.random() * 6;
+    this.ladders = [];
     this.clearStructures();
     this.clearShards();
     this.layout = layout;
@@ -425,22 +434,23 @@ export class GameRoom {
     return false;
   }
 
-  /** Static buildings + trees for the big guns map (cover, no fall). */
+  /** Static buildings + trees for the big guns map (hollow interiors, roofs, ladders). */
   spawnBattlefieldDecor() {
     this.clearStructures();
+    this.ladders = [];
     const items = [];
     const buildingColors = ["#ff8ec4", "#c77dff", "#5ce1ff", "#ffd36a", "#80ffdb", "#ff9e00"];
     let n = 0;
-    for (let ix = -4; ix <= 4; ix++) {
-      for (let iz = -4; iz <= 4; iz++) {
+    for (let ix = -3; ix <= 3; ix++) {
+      for (let iz = -3; iz <= 3; iz++) {
         if (Math.abs(ix) + Math.abs(iz) < 2) continue;
-        const x = ix * 32 + ((ix * 17 + iz * 13) % 7) - 3;
-        const z = iz * 32 + ((ix * 11 + iz * 19) % 7) - 3;
-        if (Math.hypot(x, z) < 28) continue;
-        if (Math.abs(x) > 138 || Math.abs(z) > 138) continue;
-        const w = 7 + ((n * 3) % 9);
-        const d = 7 + ((n * 5) % 8);
-        const h = 6 + ((n * 7) % 14);
+        const x = ix * 38 + ((ix * 17 + iz * 13) % 7) - 3;
+        const z = iz * 38 + ((ix * 11 + iz * 19) % 7) - 3;
+        if (Math.hypot(x, z) < 32) continue;
+        if (Math.abs(x) > 130 || Math.abs(z) > 130) continue;
+        const w = 10 + ((n * 3) % 6);
+        const d = 10 + ((n * 5) % 6);
+        const h = 8 + ((n * 7) % 8);
         items.push({
           id: n++,
           kind: "building",
@@ -449,14 +459,15 @@ export class GameRoom {
           w,
           d,
           h,
-          rotY: ((n % 4) * Math.PI) / 2,
+          rotY: 0,
           color: buildingColors[n % buildingColors.length],
+          hollow: true,
         });
       }
     }
-    for (let i = 0; i < 48; i++) {
-      const a = (i / 48) * Math.PI * 2 + i * 0.17;
-      const rr = 22 + (i % 7) * 16 + (i % 3) * 4;
+    for (let i = 0; i < 40; i++) {
+      const a = (i / 40) * Math.PI * 2 + i * 0.17;
+      const rr = 24 + (i % 7) * 15 + (i % 3) * 4;
       const x = Math.cos(a) * rr;
       const z = Math.sin(a) * rr;
       if (Math.abs(x) > 140 || Math.abs(z) > 140) continue;
@@ -475,26 +486,218 @@ export class GameRoom {
     this.layoutKey += `|struct:${items.length}:${items.map((s) => `${s.kind},${s.x.toFixed(1)},${s.z.toFixed(1)}`).join(";")}`;
 
     for (const s of items) {
-      const body = new CANNON.Body({
-        mass: 0,
-        type: CANNON.Body.STATIC,
-        material: this.boxMat,
-      });
       if (s.kind === "building") {
-        const hy = s.h * 0.5;
-        body.addShape(new CANNON.Box(new CANNON.Vec3(s.w * 0.5, hy, s.d * 0.5)));
-        body.position.set(s.x, PLATFORM_TOP + hy, s.z);
-        if (s.rotY) body.quaternion.setFromEuler(0, s.rotY, 0);
+        this.buildHollowBuilding(s);
       } else {
+        const body = new CANNON.Body({
+          mass: 0,
+          type: CANNON.Body.STATIC,
+          material: this.boxMat,
+        });
         const trunkH = s.h * 0.55;
         const canopyR = s.r;
         body.addShape(new CANNON.Cylinder(0.35, 0.45, trunkH, 8), new CANNON.Vec3(0, trunkH * 0.5, 0));
         body.addShape(new CANNON.Sphere(canopyR), new CANNON.Vec3(0, trunkH + canopyR * 0.65, 0));
         body.position.set(s.x, PLATFORM_TOP, s.z);
+        body.userData = { kind: s.kind, id: s.id, static: true };
+        this.world.addBody(body);
+        this.structures.push(body);
       }
-      body.userData = { kind: s.kind, id: s.id, static: true };
+    }
+  }
+
+  buildHollowBuilding(s) {
+    const thick = 0.45;
+    const winW = Math.min(2.4, s.w * 0.28);
+    const winH = Math.min(2.2, s.h * 0.28);
+    const winY = PLATFORM_TOP + s.h * 0.45;
+    const addWall = (cx, cy, cz, hw, hh, hd) => {
+      const body = new CANNON.Body({
+        mass: 0,
+        type: CANNON.Body.STATIC,
+        material: this.groundMat,
+      });
+      body.addShape(new CANNON.Box(new CANNON.Vec3(hw, hh, hd)));
+      body.position.set(cx, cy, cz);
+      body.userData = { kind: "building", id: s.id, static: true };
       this.world.addBody(body);
       this.structures.push(body);
+    };
+    // Local offsets then rotate around building center for rotY
+    const rot = (lx, lz) => {
+      const c = Math.cos(s.rotY || 0);
+      const sn = Math.sin(s.rotY || 0);
+      return { x: s.x + lx * c - lz * sn, z: s.z + lx * sn + lz * c };
+    };
+    const wallH = s.h * 0.5;
+    const midY = PLATFORM_TOP + wallH;
+    // Floor + roof (walkable)
+    addWall(s.x, PLATFORM_TOP + 0.12, s.z, s.w * 0.5, 0.12, s.d * 0.5);
+    addWall(s.x, PLATFORM_TOP + s.h + 0.15, s.z, s.w * 0.52, 0.18, s.d * 0.52);
+
+    // Four walls with window gaps; -Z face has a walk-in door instead of a sill
+    const doorW = Math.min(2.1, s.w * 0.32);
+    const doorH = Math.min(s.h * 0.72, 3.2);
+    const sides = [
+      { ax: 0, az: 1, len: s.w, door: false }, // +Z (ladder)
+      { ax: 0, az: -1, len: s.w, door: true },
+      { ax: 1, az: 0, len: s.d, door: false },
+      { ax: -1, az: 0, len: s.d, door: false },
+    ];
+    for (const side of sides) {
+      const alongX = side.az !== 0;
+      const gapW = side.door ? doorW : winW;
+      const half = side.len * 0.5;
+      const panel = (half - gapW * 0.5) * 0.5;
+      const off = gapW * 0.5 + panel;
+      for (const sign of [-1, 1]) {
+        if (alongX) {
+          const p = rot(sign * off, side.az * (s.d * 0.5 - thick * 0.5));
+          addWall(p.x, midY, p.z, panel, wallH, thick * 0.5);
+        } else {
+          const p = rot(side.ax * (s.w * 0.5 - thick * 0.5), sign * off);
+          addWall(p.x, midY, p.z, thick * 0.5, wallH, panel);
+        }
+      }
+      if (side.door) {
+        // Lintel only — open doorway from floor up
+        const lintelH = Math.max(0.35, (s.h - doorH) * 0.5);
+        const lintelY = PLATFORM_TOP + s.h - lintelH;
+        const p = rot(0, side.az * (s.d * 0.5 - thick * 0.5));
+        addWall(p.x, lintelY, p.z, doorW * 0.5 + 0.15, lintelH, thick * 0.5);
+      } else {
+        // lintel above window
+        const lintelH = (s.h - (winY - PLATFORM_TOP + winH * 0.5)) * 0.5;
+        const lintelY = PLATFORM_TOP + s.h - lintelH;
+        if (alongX) {
+          const p = rot(0, side.az * (s.d * 0.5 - thick * 0.5));
+          addWall(p.x, lintelY, p.z, winW * 0.5 + 0.2, Math.max(0.4, lintelH), thick * 0.5);
+        } else {
+          const p = rot(side.ax * (s.w * 0.5 - thick * 0.5), 0);
+          addWall(p.x, lintelY, p.z, thick * 0.5, Math.max(0.4, lintelH), winW * 0.5 + 0.2);
+        }
+        // sill under window
+        const sillH = (winY - PLATFORM_TOP - winH * 0.5) * 0.5;
+        const sillY = PLATFORM_TOP + sillH;
+        if (sillH > 0.3) {
+          if (alongX) {
+            const p = rot(0, side.az * (s.d * 0.5 - thick * 0.5));
+            addWall(p.x, sillY, p.z, winW * 0.5 + 0.2, sillH, thick * 0.5);
+          } else {
+            const p = rot(side.ax * (s.w * 0.5 - thick * 0.5), 0);
+            addWall(p.x, sillY, p.z, thick * 0.5, sillH, winW * 0.5 + 0.2);
+          }
+        }
+      }
+    }
+
+    // Ladder on +Z face
+    const ladderLocal = { x: 0, z: s.d * 0.5 + 0.55 };
+    const lp = rot(ladderLocal.x, ladderLocal.z);
+    const ladderBody = new CANNON.Body({
+      mass: 0,
+      type: CANNON.Body.STATIC,
+      material: this.boxMat,
+    });
+    ladderBody.addShape(new CANNON.Box(new CANNON.Vec3(0.55, s.h * 0.5, 0.12)));
+    ladderBody.position.set(lp.x, PLATFORM_TOP + s.h * 0.5, lp.z);
+    ladderBody.userData = { kind: "ladder", id: s.id, static: true };
+    this.world.addBody(ladderBody);
+    this.structures.push(ladderBody);
+    this.ladders.push({
+      x: lp.x,
+      z: lp.z,
+      y0: PLATFORM_TOP,
+      y1: PLATFORM_TOP + s.h + 0.4,
+      r: 1.35,
+    });
+  }
+
+  tickSniperDrop(dt) {
+    if (this.mode !== "guns" || this.phase !== "playing") return;
+    this.sniperSpawnT -= dt;
+    if (this.sniperSpawnT > 0) return;
+    this.sniperSpawnT = 60;
+    if (this.snipers.length >= 2) return;
+    const ang = Math.random() * Math.PI * 2;
+    const rr = 20 + Math.random() * 100;
+    let x = Math.cos(ang) * rr;
+    let z = Math.sin(ang) * rr;
+    if (this.tooCloseToStructure(x, z, 4)) {
+      x = Math.cos(ang + 1) * (rr * 0.7);
+      z = Math.sin(ang + 1) * (rr * 0.7);
+    }
+    const body = new CANNON.Body({
+      mass: 2,
+      material: this.boxMat,
+      shape: new CANNON.Box(new CANNON.Vec3(0.55, 0.18, 0.18)),
+      position: new CANNON.Vec3(x, 28 + Math.random() * 10, z),
+      linearDamping: 0.1,
+      angularDamping: 0.3,
+    });
+    body.velocity.set(0, -4, 0);
+    body.userData = {
+      id: this.debrisNextId++,
+      kind: "sniper",
+      color: "#1f2937",
+      sx: 1.1,
+      sy: 0.36,
+      sz: 0.36,
+    };
+    this.world.addBody(body);
+    this.snipers.push(body);
+    this.events.push({ type: "sniperDrop", id: body.userData.id });
+  }
+
+  pickupSnipers() {
+    for (let i = this.snipers.length - 1; i >= 0; i--) {
+      const gun = this.snipers[i];
+      if (gun.position.y < -8) {
+        this.world.removeBody(gun);
+        this.snipers.splice(i, 1);
+        continue;
+      }
+      for (const p of this.players.values()) {
+        if (!p.alive) continue;
+        const dx = p.body.position.x - gun.position.x;
+        const dy = p.body.position.y - gun.position.y;
+        const dz = p.body.position.z - gun.position.z;
+        if (Math.hypot(dx, dy, dz) < 1.8) {
+          p.weapon = "sniper";
+          this.world.removeBody(gun);
+          this.snipers.splice(i, 1);
+          this.events.push({ type: "sniperPickup", id: p.id, by: p.name });
+          break;
+        }
+      }
+    }
+  }
+
+  applyLadderClimb(dt) {
+    if (!this.ladders?.length) return;
+    for (const p of this.players.values()) {
+      if (!p.alive) continue;
+      const pos = p.body.position;
+      let on = null;
+      for (const L of this.ladders) {
+        if (Math.hypot(pos.x - L.x, pos.z - L.z) <= L.r && pos.y >= L.y0 - 0.4 && pos.y <= L.y1 + 0.6) {
+          on = L;
+          break;
+        }
+      }
+      if (!on) continue;
+      const climb = (p.input.mz || 0) > 0.15 || p.input.jump;
+      const down = (p.input.mz || 0) < -0.15;
+      if (climb) {
+        p.body.velocity.y = Math.max(p.body.velocity.y, 7.5);
+        p.body.velocity.x *= 0.4;
+        p.body.velocity.z *= 0.4;
+        p.body.wakeUp();
+      } else if (down) {
+        p.body.velocity.y = Math.min(p.body.velocity.y, -4);
+      } else if (pos.y > on.y0 + 0.8 && pos.y < on.y1 - 0.3) {
+        p.body.velocity.y *= 0.5;
+      }
     }
   }
 
@@ -699,6 +902,7 @@ export class GameRoom {
       sz: hz * 2,
       yaw: Math.random() * Math.PI * 2,
       chargeT: 0.6 + Math.random() * 1.2,
+      hp: 60,
     };
     // Cannon may not retain arbitrary fields on some paths — mirror on body
     body.goat = true;
@@ -814,11 +1018,10 @@ export class GameRoom {
         wishZ = -Math.cos(ud.yaw || 0);
       }
       const sprint = tx != null && best < chaseRange;
-      // Same top speed as players (grounded 9.2 / air 10.5)
-      const walkSpeed = sprint ? 10.5 : 9.2;
-      const accel = sprint ? 70 : 55;
-      g.velocity.x = this.approach(g.velocity.x, wishX * walkSpeed, accel * dt);
-      g.velocity.z = this.approach(g.velocity.z, wishZ * walkSpeed, accel * dt);
+      // Slightly above player sprint (15.2) so the goat can close the gap
+      const walkSpeed = sprint ? 16.5 : 13.5;
+      g.velocity.x = wishX * walkSpeed;
+      g.velocity.z = wishZ * walkSpeed;
       // kill ball-bounce on landing
       if (g.velocity.y < 0) g.velocity.y *= 0.92;
       if (g.position.y < 2.2 && g.velocity.y > 0 && g.velocity.y < 6) {
@@ -1074,6 +1277,7 @@ export class GameRoom {
       punchFlash: 0,
       shootFlash: 0,
       hp: 100,
+      weapon: "pistol",
       lastHitBy: null,
       lastHitAt: 0,
       yaw: 0,
@@ -1209,6 +1413,7 @@ export class GameRoom {
     list.forEach((p, i) => {
       p.alive = true;
       p.hp = 100;
+      p.weapon = "pistol";
       p.punchCd = 0;
       p.shootCd = 0;
       p.dashCd = 0;
@@ -1364,6 +1569,8 @@ export class GameRoom {
   step(dt) {
     if (this.players.size === 0) return;
     this.roundT += dt;
+    this.dayPhase = (this.roundT % 600) / 600;
+    this.windAngle = (this.windAngle || 0) + dt * 0.12;
     if (
       this.phase === "playing" &&
       this.mode === "hill" &&
@@ -1399,7 +1606,12 @@ export class GameRoom {
     this.stepGrenades(dt);
     this.stepSmokes(dt);
     this.world.step(1 / 60, dt, 4);
+    // Re-apply goat chase after physics so friction cannot turn it into a snail
+    this.steerGoats(0);
     this.applyPropHitKnockback();
+    this.tickSniperDrop(dt);
+    this.pickupSnipers();
+    this.applyLadderClimb(dt);
 
     for (const p of this.players.values()) {
       if (!p.alive && this.phase === "playing") continue;
@@ -1483,7 +1695,7 @@ export class GameRoom {
     if (this.mode === "guns") {
       if ((p.input.shoot || p.input.punch) && p.shootCd <= 0 && p.alive) {
         this.doShoot(p);
-        p.shootCd = 0.38;
+        p.shootCd = p.weapon === "sniper" ? 0.85 : 0.285;
         p.shootFlash = 0.12;
       }
       if (p.input.grenade && (p.grenadeCd || 0) <= 0 && p.alive) {
@@ -1613,9 +1825,13 @@ export class GameRoom {
     const fx = -Math.sin(yaw) * cosP;
     const fy = sinP;
     const fz = -Math.cos(yaw) * cosP;
-    // ~50% slower than the previous ~180 u/s hitscan-feel beam
-    const speed = 90;
-    const range = Math.max(90, Math.min(240, this.platformRadius * 1.15));
+    // ~50% slower than the previous ~180 u/s hitscan-feel beam; sniper is much faster
+    const sniper = p.weapon === "sniper";
+    const speed = sniper ? 240 : 90;
+    const range = sniper
+      ? Math.max(160, Math.min(320, this.platformRadius * 1.4))
+      : Math.max(90, Math.min(240, this.platformRadius * 1.15));
+    const dmg = sniper ? 55 : 20;
     this.bullets.push({
       id: this.bulletNextId++,
       ownerId: p.id,
@@ -1629,6 +1845,8 @@ export class GameRoom {
       speed,
       life: range / speed,
       maxLife: range / speed,
+      dmg,
+      sniper,
     });
     this.events.push({
       type: "shot",
@@ -1642,6 +1860,7 @@ export class GameRoom {
       dz: fz,
       speed,
       range,
+      sniper,
       hit: false,
     });
   }
@@ -1680,7 +1899,8 @@ export class GameRoom {
         }
       }
       for (const body of props) {
-        if (body.userData?.kind === "medkit") continue;
+        if (body.userData?.kind === "medkit" || body.userData?.kind === "sniper" || body.userData?.kind === "ladder")
+          continue;
         const t = this.raycastBody(ox, oy, oz, fx, fy, fz, body, hitT);
         if (t == null || t >= hitT) continue;
         hitT = t;
@@ -1698,7 +1918,27 @@ export class GameRoom {
           y: ey,
           z: ez,
           hit: !!hitPlayer,
+          sniper: !!b.sniper,
         });
+        if (hitProp && hitProp.userData?.kind === "goat") {
+          const ud = hitProp.userData;
+          ud.hp = Math.max(0, (ud.hp ?? 60) - (b.dmg || 20));
+          hitProp.wakeUp();
+          hitProp.velocity.x += fx * 8;
+          hitProp.velocity.z += fz * 8;
+          hitProp.velocity.y += 4;
+          this.events.push({ type: "goatHit", id: ud.id, hp: ud.hp });
+          if (ud.hp <= 0) {
+            const gi = this.goats.indexOf(hitProp);
+            if (gi >= 0) {
+              this.world.removeBody(hitProp);
+              this.goats.splice(gi, 1);
+              this.events.push({ type: "goatKill", by: b.by });
+            }
+          }
+          this.bullets.splice(i, 1);
+          continue;
+        }
         if (hitProp && hitProp.mass > 0 && hitProp.type !== CANNON.Body.STATIC) {
           hitProp.wakeUp();
           const kick = 14 + Math.min(22, 80 / Math.max(4, hitProp.mass));
@@ -1711,11 +1951,12 @@ export class GameRoom {
         }
         if (hitPlayer) {
           const shooter = this.players.get(b.ownerId);
-          hitPlayer.hp = Math.max(0, (hitPlayer.hp ?? 100) - 20);
+          const dmg = b.dmg || 20;
+          hitPlayer.hp = Math.max(0, (hitPlayer.hp ?? 100) - dmg);
           hitPlayer.lastHitBy = b.ownerId;
           hitPlayer.lastHitAt = this.roundT;
-          hitPlayer.body.velocity.x += fx * 4.5;
-          hitPlayer.body.velocity.z += fz * 4.5;
+          hitPlayer.body.velocity.x += fx * (b.sniper ? 7 : 4.5);
+          hitPlayer.body.velocity.z += fz * (b.sniper ? 7 : 4.5);
           hitPlayer.body.velocity.y += 1.5 + fy * 2;
           this.events.push({
             type: "hit",
@@ -2145,6 +2386,7 @@ export class GameRoom {
         shoot: (p.shootFlash || 0) > 0,
         dashCd: p.dashCd,
         hp: p.hp ?? 100,
+        weapon: p.weapon || "pistol",
       });
     }
     const boxes = this.boxes.map((b, i) => ({
@@ -2235,8 +2477,27 @@ export class GameRoom {
       vz: b.velocity.z,
       fuse: b.userData?.fuse ?? 0,
     }));
-    // Client still reads one debris list — merge goats + medkits + grenades
-    const debrisOut = [...debris, ...goats, ...medkits, ...grenades];
+    const snipers = (this.snipers || []).map((b) => ({
+      id: b.userData?.id ?? 0,
+      kind: "sniper",
+      color: "#1f2937",
+      sx: b.userData?.sx ?? 1.1,
+      sy: b.userData?.sy ?? 0.36,
+      sz: b.userData?.sz ?? 0.36,
+      x: b.position.x,
+      y: b.position.y,
+      z: b.position.z,
+      qx: b.quaternion.x,
+      qy: b.quaternion.y,
+      qz: b.quaternion.z,
+      qw: b.quaternion.w,
+      yaw: 0,
+      vx: b.velocity.x,
+      vy: b.velocity.y,
+      vz: b.velocity.z,
+    }));
+    // Client still reads one debris list — merge goats + medkits + grenades + snipers
+    const debrisOut = [...debris, ...goats, ...medkits, ...grenades, ...snipers];
     const ev = this.events;
     this.events = [];
     return {
@@ -2253,6 +2514,8 @@ export class GameRoom {
       winnerId: this.winnerId,
       winnerName: this.winnerName,
       roundKills: this.roundKills || 0,
+      dayPhase: this.dayPhase || 0,
+      windAngle: this.windAngle || 0,
       players,
       boxes,
       debris: debrisOut,
