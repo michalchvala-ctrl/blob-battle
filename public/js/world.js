@@ -454,7 +454,74 @@ export class GameWorld {
     }
   }
 
+  makeGoatMesh(d) {
+    const fur = d.color || "#c4a574";
+    const dark = "#5c4030";
+    const horn = "#f2e6d8";
+    const g = new THREE.Group();
+
+    const body = new THREE.Mesh(new THREE.BoxGeometry(0.95, 0.72, 1.35), toon(fur));
+    body.position.set(0, 0.08, 0);
+    body.castShadow = true;
+    g.add(body);
+
+    const belly = new THREE.Mesh(new THREE.SphereGeometry(0.42, 12, 10), toon("#d4b896"));
+    belly.scale.set(1.15, 0.85, 1.35);
+    belly.position.set(0, -0.05, 0.05);
+    g.add(belly);
+
+    const head = new THREE.Mesh(new THREE.BoxGeometry(0.55, 0.48, 0.58), toon(fur));
+    head.position.set(0, 0.28, 0.78);
+    head.castShadow = true;
+    g.add(head);
+
+    const snout = new THREE.Mesh(new THREE.BoxGeometry(0.32, 0.22, 0.28), toon("#e8d4b8"));
+    snout.position.set(0, 0.12, 1.12);
+    g.add(snout);
+
+    for (const sx of [-0.16, 0.16]) {
+      const hornM = new THREE.Mesh(new THREE.ConeGeometry(0.07, 0.38, 6), toon(horn));
+      hornM.position.set(sx, 0.58, 0.72);
+      hornM.rotation.z = sx > 0 ? -0.35 : 0.35;
+      hornM.rotation.x = -0.45;
+      hornM.castShadow = true;
+      g.add(hornM);
+    }
+
+    const earGeo = new THREE.BoxGeometry(0.14, 0.22, 0.06);
+    for (const sx of [-0.32, 0.32]) {
+      const ear = new THREE.Mesh(earGeo, toon(fur));
+      ear.position.set(sx, 0.42, 0.7);
+      ear.rotation.z = sx > 0 ? -0.5 : 0.5;
+      g.add(ear);
+    }
+
+    const legGeo = new THREE.CylinderGeometry(0.09, 0.07, 0.55, 6);
+    const legMat = toon(dark);
+    const legs = [
+      [-0.28, -0.42, 0.38],
+      [0.28, -0.42, 0.38],
+      [-0.28, -0.42, -0.42],
+      [0.28, -0.42, -0.42],
+    ];
+    for (const [lx, ly, lz] of legs) {
+      const leg = new THREE.Mesh(legGeo, legMat);
+      leg.position.set(lx, ly, lz);
+      leg.castShadow = true;
+      g.add(leg);
+    }
+
+    const tail = new THREE.Mesh(new THREE.BoxGeometry(0.1, 0.1, 0.28), toon(dark));
+    tail.position.set(0, 0.15, -0.78);
+    g.add(tail);
+
+    g.position.set(d.x, d.y, d.z);
+    g.quaternion.set(d.qx, d.qy, d.qz, d.qw);
+    return g;
+  }
+
   makeDebrisMesh(d) {
+    if (d.kind === "goat") return this.makeGoatMesh(d);
     const color = d.color || "#ff9e00";
     let geo;
     if (d.kind === "sphere") {
@@ -518,6 +585,9 @@ export class GameWorld {
     for (const [id, mesh] of this.debrisMeshes) {
       if (!seen.has(id)) {
         this.props.remove(mesh);
+        mesh.traverse?.((o) => {
+          o.geometry?.dispose?.();
+        });
         mesh.geometry?.dispose?.();
         this.debrisMeshes.delete(id);
       }

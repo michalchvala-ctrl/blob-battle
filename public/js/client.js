@@ -316,6 +316,13 @@ function handleEvent(ev) {
   } else if (ev.type === "shard") {
     world.addShake(0.28);
     sfx.fall();
+  } else if (ev.type === "goat") {
+    text = "🐐 Koza padá z neba!";
+    sfx.goat?.();
+    world.addShake(0.35);
+  } else if (ev.type === "goatHit") {
+    sfx.punch();
+    world.addShake(0.45);
   }
   if (!text) return;
   const li = document.createElement("li");
